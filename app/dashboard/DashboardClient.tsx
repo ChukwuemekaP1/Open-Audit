@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { AlertCircle, BookOpen, ArrowRight, Radio, PauseCircle, PlayCircle } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, BookOpen, ArrowRight, Radio, PauseCircle, PlayCircle, Upload, FileJson, Trash2 } from "lucide-react";
 import { SearchBar } from "@/components/dashboard/SearchBar";
 import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
 import { StatsBar } from "@/components/dashboard/StatsBar";
@@ -16,8 +16,9 @@ import {
 } from "@/lib/translator/custom-abi";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
-import { Button } from "@/components/ui/button";
 import type { TranslatedEvent } from "@/lib/translator/types";
+import type { CustomAbi } from "@/lib/translator/custom-abi";
+import type { RawEvent } from "@/lib/mock-data";
 
 /** Simulates a network delay for realistic UX. */
 function simulateNetworkDelay(ms: number): Promise<void> {
@@ -33,6 +34,7 @@ export function DashboardClient(): React.JSX.Element {
   const [searchedContract, setSearchedContract] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [events, setEvents] = useState<TranslatedEvent[]>([]);
 
   // Load previously uploaded ABIs from localStorage after mount. Doing this in
   // an effect (rather than during render) keeps the server and client output
@@ -51,7 +53,7 @@ export function DashboardClient(): React.JSX.Element {
 
   // Derive translations from the raw events + current custom blueprints so the
   // feed re-translates instantly when an ABI is uploaded or removed.
-  const events = useMemo(
+  const translatedEvents = useMemo(
     function () {
       return translateEvents(rawEvents, customBlueprints);
     },
@@ -96,6 +98,11 @@ export function DashboardClient(): React.JSX.Element {
   const handleAbiRemove = useCallback(function (contractId: string): void {
     setCustomAbis(removeCustomAbi(contractId));
   }, []);
+
+  // Combine initial translated events and live events
+  const allEvents = useMemo(() => {
+    return [...events, ...translatedEvents];
+  }, [events, translatedEvents]);
 
   return (
     <div className="space-y-6">
@@ -172,7 +179,7 @@ export function DashboardClient(): React.JSX.Element {
       </section>
 
       {/* Stats */}
-      {!isLoading && <StatsBar events={events} />}
+      {!isLoading && <StatsBar events={allEvents} />}
 
       {/* Feed */}
       <section aria-label="Event feed">
@@ -212,11 +219,11 @@ export function DashboardClient(): React.JSX.Element {
               {isLive ? "Stop Live" : "Live Feed"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              {isLoading ? "Loading..." : `${events.length} events`}
+              {isLoading ? "Loading..." : `${allEvents.length} events`}
             </span>
           </div>
         </div>
-        <EventFeedTable events={events} isLoading={isLoading} newEventIds={newEventIds} />
+        <EventFeedTable events={allEvents} isLoading={isLoading} newEventIds={newEventIds} />
       </section>
 
       {/* Contributor CTA */}
