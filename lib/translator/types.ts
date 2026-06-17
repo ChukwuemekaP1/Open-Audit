@@ -71,6 +71,43 @@ export interface TranslationResult {
   eventType: string;
 }
 
+/**
+ * A user-supplied ABI for a contract that is NOT (yet) in the global
+ * Translation Registry. Parsed from a Soroban ABI JSON file and persisted
+ * in the browser so developers can translate their own contracts locally.
+ */
+export interface CustomAbi {
+  /** The deployed Soroban contract address this ABI describes. */
+  contractId: string;
+  /** Human-readable name for the contract. */
+  contractName: string;
+  /** The event definitions declared by the ABI. */
+  events: CustomAbiEvent[];
+}
+
+/** A single event definition within a {@link CustomAbi}. */
+export interface CustomAbiEvent {
+  /** The event name, e.g. "transfer" or "swap". */
+  name: string;
+  /**
+   * Ordered field definitions describing the event's payload.
+   * Fields map positionally to topics[1..] followed by the data value.
+   */
+  fields: CustomAbiField[];
+}
+
+/** A single field within a {@link CustomAbiEvent}. */
+export interface CustomAbiField {
+  /** The field name, e.g. "from", "to", "amount". */
+  name: string;
+  /**
+   * The Soroban value type. Used to choose how the value is rendered:
+   * "address"-like types become shortened keys, numeric types become
+   * decimal amounts, and anything else falls back to truncated hex.
+   */
+  type: string;
+}
+
 /** Decoded XDR address (simplified representation). */
 export interface DecodedAddress {
   /** The full Stellar public key (G... address). */

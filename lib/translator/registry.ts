@@ -70,11 +70,26 @@ const REGISTRY: BlueprintRegistry = buildRegistry();
 /**
  * Translates a single raw Soroban event into a human-readable TranslatedEvent.
  *
- * Looks up the contract ID in the registry, finds the matching blueprint,
- * and calls its translate() function. If no blueprint is found or the
- * blueprint returns null, the event is marked as "cryptic".
+ * Lookup order:
+ *   1. The caller-supplied `customBlueprints` map (e.g. user-uploaded ABIs from
+ *      localStorage). These take precedence so developers can translate their
+ *      own contracts before they are merged into the global registry.
+ *   2. The global REGISTRY of community blueprints.
+ *
+ * If neither produces a translation, the event is marked as "cryptic".
  */
-export function translateEvent(event: RawEvent): TranslatedEvent {
+export function translateEvent(
+  event: RawEvent,
+  customBlueprints?: Map<string, TranslationBlueprint>
+): TranslatedEvent {
+  // 1. Custom (local) blueprints win when they can translate the event.
+  const custom = customBlueprints?.get(event.contractId);
+  if (custom) {
+    const translated = applyBlueprint(event, custom);
+    if (translated) return translated;
+  }
+
+  // 2. Fall back to the global community registry.
   const blueprint = REGISTRY.get(event.contractId);
 
   if (!blueprint) {
@@ -82,22 +97,31 @@ export function translateEvent(event: RawEvent): TranslatedEvent {
       raw: event,
       description: null,
       status: "cryptic",
-      blueprintName: null,
+      // Surface the custom contract name (if any) so the UI still has context.
+      blueprintName: custom?.contractName ?? null,
       eventType: null,
     };
   }
 
+  const translated = applyBlueprint(event, blueprint);
+  if (translated) return translated;
+
+  return {
+    raw: event,
+    description: null,
+    status: "cryptic",
+    blueprintName: blueprint.contractName,
+    eventType: null,
+  };
+}
+
+/**
+ * Runs a single blueprint against an event, returning a translated event or
+ * null when the blueprint cannot handle it.
+ */
+function applyBlueprint(event: RawEvent, blueprint: TranslationBlueprint): TranslatedEvent | null {
   const result = blueprint.translate(event);
-
-  if (!result) {
-    return {
-      raw: event,
-      description: null,
-      status: "cryptic",
-      blueprintName: blueprint.contractName,
-      eventType: null,
-    };
-  }
+  if (!result) return null;
 
   return {
     raw: event,
@@ -111,11 +135,17 @@ export function translateEvent(event: RawEvent): TranslatedEvent {
 /**
  * Translates a batch of raw events.
  * Preserves order and handles errors per-event gracefully.
+ *
+ * @param customBlueprints Optional per-session blueprints (e.g. uploaded ABIs)
+ *   that are consulted before the global registry.
  */
-export function translateEvents(events: RawEvent[]): TranslatedEvent[] {
+export function translateEvents(
+  events: RawEvent[],
+  customBlueprints?: Map<string, TranslationBlueprint>
+): TranslatedEvent[] {
   return events.map(function (event: RawEvent): TranslatedEvent {
     try {
-      return translateEvent(event);
+      return translateEvent(event, customBlueprints);
     } catch {
       return {
         raw: event,
