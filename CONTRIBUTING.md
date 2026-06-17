@@ -101,54 +101,126 @@ Please read [CODE_STANDARDS.md](CODE_STANDARDS.md) before writing any code. The 
 
 ## How to Add a Translation Blueprint
 
-This is the most impactful contribution you can make. A **blueprint** teaches Open-Audit how to translate a specific contract's events.
+This is the most impactful contribution you can make. A **blueprint** teaches Open-Audit how to translate a specific contract's events into plain English.
 
-### Step 1: Identify the Contract
+### Step-by-Step Guide
 
-Find the Contract ID and its ABI/event schema. Soroswap, Blend Protocol, and Phoenix DEX all publish their schemas publicly.
+#### Step 1: Understand Soroban Event Structure
 
-### Step 2: Create the Blueprint File
+Soroban contract events have a consistent structure:
+- `contractId`: The contract's address (starts with "C")
+- `topics`: An array of hex-encoded XDR values
+  - `topics[0]`: The event name/discriminant (encoded as a Symbol XDR)
+  - `topics[1..n]`: Additional indexed fields (like addresses)
+- `data`: Hex-encoded XDR payload for unindexed fields (like amounts)
+
+#### Step 2: Identify the Contract
+
+Find:
+1. The contract's deployed address (Contract ID)
+2. The contract's ABI or event schema (defines which topics/data each event uses)
+3. Real sample events from the network (for testing)
+
+#### Step 3: Create the Blueprint File
 
 Create `/lib/translator/blueprints/your-contract-name.ts`:
 
 ```typescript
-import type { TranslationBlueprint } from "../types";
+import { decodeAddress, decodeAmount } from "../decode";
+import type { TranslationBlueprint, TranslationResult, RawEvent } from "../types";
 
-// Use standard function declarations — no arrow functions
+/** Hex-encoded event topics (Symbol XDR). */
+const YOUR_EVENT_TOPIC = "0x00000000000000000000000000000000000000000000000000000000796f75725f6576656e74";
+
+/** Translate your event. */
+function translateYourEvent(event: RawEvent): TranslationResult | null {
+  if (!event.topics[0]?.includes("796f75725f6576656e74")) return null;
+
+  const field1 = decodeAddress(event.topics[1] ?? "0x00");
+  const field2 = decodeAddress(event.topics[2] ?? "0x00");
+  const amount = decodeAmount(event.data, "SYMBOL");
+
+  return {
+    description: `[${field1.short}] did something with [${field2.short}] for ${amount.formatted} SYMBOL`,
+    eventType: "Your Event",
+  };
+}
+
+/** Create the full blueprint. */
 export function createYourContractBlueprint(): TranslationBlueprint {
   return {
     contractId: "CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
     contractName: "Your Contract Name",
-    translate: function (event) {
-      const topic = event.topics[0];
-
-      if (topic === "your_event_topic_hex") {
-        const amount = decodeAmount(event.data);
-        const from = decodeAddress(event.topics[1]);
-        const to = decodeAddress(event.topics[2]);
-        return `${from} transferred ${amount} TOKEN to ${to}`;
-      }
-
-      return null; // Return null if this blueprint can't translate the event
+    translate: function (event: RawEvent): TranslationResult | null {
+      return translateYourEvent(event);
     },
   };
 }
 ```
 
-### Step 3: Register the Blueprint
+#### Step 4: Register the Blueprint
 
 Open `/lib/translator/registry.ts` and import + register your blueprint:
 
 ```typescript
 import { createYourContractBlueprint } from "./blueprints/your-contract-name";
 
-// Add to the blueprints array in buildRegistry()
-createYourContractBlueprint(),
+// Add to buildRegistry()
+const yourBlueprint = createYourContractBlueprint();
+registry.set(yourBlueprint.contractId, yourBlueprint);
 ```
 
-### Step 4: Test It
+#### Step 5: Test Locally
 
-Add a test in `/lib/translator/__tests__/your-contract-name.test.ts` with a real raw event from the network.
+Use the Custom ABI feature in the dashboard first to test your event structure:
+
+1. Start the dev server: `npm run dev`
+2. Open http://localhost:3000
+3. Click "Upload ABI" and paste your JSON configuration
+4. Test with sample events
+
+#### JSON Configuration Example (for Custom ABI Testing)
+
+Here's a clean, copy-pasteable JSON configuration you can use with the "Upload ABI" dialog:
+
+```json
+{
+  "contractId": "CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "contractName": "Your Contract Name",
+  "events": [
+    {
+      "name": "your_event",
+      "fields": [
+        { "name": "from", "type": "address" },
+        { "name": "to", "type": "address" },
+        { "name": "amount", "type": "i128" }
+      ]
+    }
+  ]
+}
+```
+
+#### Step 6: Run the Test Suite
+
+Before pushing a PR, always run:
+
+```bash
+# Run all tests
+npm test
+
+# Run type checking
+npx tsc --noEmit
+
+# Run linting
+npm run lint
+
+# Format code
+npm run format
+```
+
+#### Step 7: Add a Test File (Optional but Recommended)
+
+Add a test in `/lib/translator/__tests__/your-contract-name.test.ts` with real raw events from the network.
 
 ---
 
