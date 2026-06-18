@@ -16,9 +16,7 @@ import {
 } from "@/lib/translator/custom-abi";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
-import type { TranslatedEvent } from "@/lib/translator/types";
-import type { CustomAbi } from "@/lib/translator/custom-abi";
-import type { RawEvent } from "@/lib/mock-data";
+import type { TranslatedEvent, RawEvent, CustomAbi } from "@/lib/translator/types";
 
 /** Simulates a network delay for realistic UX. */
 function simulateNetworkDelay(ms: number): Promise<void> {
@@ -61,7 +59,7 @@ export function DashboardClient(): React.JSX.Element {
   );
 
   const handleNewEvent = useCallback((event: TranslatedEvent) => {
-    setEvents((prev) => [event, ...prev]);
+    setRawEvents((prev) => [event.raw, ...prev]);
   }, []);
 
   const { isLive, isPaused, newEventIds, toggleLive, togglePause } = useLiveFeed(handleNewEvent);
@@ -179,7 +177,7 @@ export function DashboardClient(): React.JSX.Element {
       </section>
 
       {/* Stats */}
-      {!isLoading && <StatsBar events={allEvents} />}
+      <StatsBar events={events} isLoading={isLoading} />
 
       {/* Feed */}
       <section aria-label="Event feed">
