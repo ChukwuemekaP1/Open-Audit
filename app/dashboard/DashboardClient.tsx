@@ -16,6 +16,7 @@ import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
 import { SearchBar } from "@/components/dashboard/SearchBar";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { UploadAbiDialog } from "@/components/dashboard/UploadAbiDialog";
+import { ExportDataDialog } from "@/components/dashboard/ExportDataDialog";
 import { Button } from "@/components/ui/button";
 import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
@@ -56,14 +57,15 @@ export function DashboardClient(): React.JSX.Element {
     function () {
       return buildCustomBlueprints(customAbis);
     },
-    [customAbis]
+    [customAbis],
   );
 
   const events = useMemo(
     function () {
-      return translateEvents(rawEvents, customBlueprints);
+      const translated = translateEvents(rawEvents, customBlueprints);
+      return [...liveEvents, ...translated];
     },
-    [rawEvents, customBlueprints]
+    [rawEvents, customBlueprints, liveEvents]
   );
 
   const handleNewEvent = useCallback(
@@ -79,7 +81,8 @@ export function DashboardClient(): React.JSX.Element {
     [searchedContract]
   );
 
-  const { isLive, isPaused, newEventIds, toggleLive, togglePause } = useLiveFeed(handleNewEvent);
+  const { isLive, isPaused, newEventIds, toggleLive, togglePause } =
+    useLiveFeed(handleNewEvent);
 
   const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
 
@@ -108,18 +111,19 @@ export function DashboardClient(): React.JSX.Element {
       setRawEvents(MOCK_RAW_EVENTS);
       setSearchedContract(null);
       setError(null);
-      return;
-    }
 
-    setIsLoading(true);
-    setError(null);
+      try {
+        // Simulate fetching from Stellar network
+        await simulateNetworkDelay(800);
 
     try {
       await simulateNetworkDelay(800);
       setRawEvents(getMockEventsForContract(trimmed));
       setSearchedContract(trimmed);
     } catch {
-      setError("Failed to fetch events. Please check the Contract ID and try again.");
+      setError(
+        "Failed to fetch events. Please check the Contract ID and try again.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -227,6 +231,21 @@ export function DashboardClient(): React.JSX.Element {
             Event Feed
           </h2>
           <div className="flex items-center gap-2">
+            {/* Export Data button — placed at the header boundary of the event stream */}
+            <Button
+              id="export-data-button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950"
+              onClick={function () {
+                setIsExportOpen(true);
+              }}
+              disabled={isLoading || events.length === 0}
+              aria-label="Export filtered event data"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Export Data
+            </Button>
             {isLive && (
               <Button
                 variant="ghost"
@@ -262,7 +281,7 @@ export function DashboardClient(): React.JSX.Element {
               {isLive ? "Stop Live" : "Live Feed"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              {isLoading ? "Loading..." : `${events.length} events`}
+              {isBusy ? "Loading..." : `${events.length} events`}
             </span>
           </div>
         </div>
@@ -311,6 +330,13 @@ export function DashboardClient(): React.JSX.Element {
         open={isUploadOpen}
         onOpenChange={setIsUploadOpen}
         onUpload={handleAbiUpload}
+      />
+
+      {/* Export Data dialog */}
+      <ExportDataDialog
+        open={isExportOpen}
+        onOpenChange={setIsExportOpen}
+        events={events}
       />
     </div>
   );

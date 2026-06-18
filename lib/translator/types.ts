@@ -125,3 +125,78 @@ export interface DecodedAmount {
   /** Token symbol if known. */
   symbol: string;
 }
+
+/** Represents a Soroban ScVal type discriminator. */
+export type ScValType =
+  | "Bool"
+  | "Void"
+  | "Error"
+  | "U32"
+  | "I32"
+  | "U64"
+  | "I64"
+  | "Timepoint"
+  | "Duration"
+  | "U128"
+  | "I128"
+  | "U256"
+  | "I256"
+  | "Bytes"
+  | "String"
+  | "Symbol"
+  | "Vec"
+  | "Map"
+  | "Address"
+  | "ContractInstance"
+  | "LedgerKeyContractInstance"
+  | "LedgerKeyNonce";
+
+/** A decoded ScVal value with its type information. */
+export interface DecodedScVal {
+  /** The type of the ScVal. */
+  type: ScValType;
+  /** The decoded value as a string representation. */
+  value: string;
+  /** Raw hex representation for debugging. */
+  hex: string;
+}
+
+/** A decoded Map entry (key-value pair). */
+export interface DecodedMapEntry {
+  /** The decoded key. */
+  key: DecodedScVal;
+  /** The decoded value. */
+  value: DecodedScVal;
+}
+
+/** A decoded Soroban Map (ScMap). */
+export interface DecodedMap {
+  /** The type discriminator. */
+  type: "Map";
+  /** Array of key-value pairs. */
+  entries: DecodedMapEntry[];
+  /** Human-readable summary. */
+  summary: string;
+}
+
+/** A decoded Soroban Vector (ScVec). */
+export interface DecodedVec {
+  /** The type discriminator. */
+  type: "Vec";
+  /** Array of decoded values. */
+  elements: DecodedScVal[];
+  /** Human-readable summary. */
+  summary: string;
+}
+
+/** A decoded Soroban Enum (ScVal with enum variant). */
+export interface DecodedEnum {
+  /** The type discriminator. */
+  type: "Enum";
+  /** The enum variant name/discriminant. */
+  variant: string;
+  /** The decoded value if the enum has a payload. */
+  value?: DecodedScVal;
+  /** Human-readable summary. */
+  summary: string;
+}

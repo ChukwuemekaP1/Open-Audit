@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { translateEvent } from "./registry";
+import {
+  detectScValType,
+  decodeMap,
+  decodeVec,
+  decodeEnum,
+  decodeScVal,
+  sanitizeHex,
+  isValidHex,
+  escapeHtml,
+} from "./decode";
 import type { RawEvent } from "./types";
 
 /**
@@ -83,5 +93,198 @@ describe("translateEvent", () => {
     expect(result.description).toContain("XLM");
     expect(result.eventType).toBe("Burn");
     expect(result.blueprintName).toContain("Stellar Asset Contract");
+  });
+});
+
+describe("Hex sanitization", () => {
+  it("validates correct hex strings", () => {
+    expect(isValidHex("0x123abc")).toBe(true);
+    expect(isValidHex("123abc")).toBe(true);
+    expect(isValidHex("ABCDEF")).toBe(true);
+  });
+
+  it("rejects invalid hex strings", () => {
+    expect(isValidHex("0x123xyz")).toBe(false);
+    expect(isValidHex("")).toBe(false);
+    expect(isValidHex("not hex")).toBe(false);
+    expect(isValidHex(null as unknown as string)).toBe(false);
+  });
+
+  it("sanitizes hex strings by removing non-hex characters", () => {
+    expect(sanitizeHex("0x123abc")).toBe("0x123abc");
+    expect(sanitizeHex("0x12-3ab-c")).toBe("0x123abc");
+    expect(sanitizeHex("123xyz")).toBe("0x123");
+    expect(sanitizeHex("")).toBe("");
+  });
+
+  it("escapes HTML entities to prevent XSS", () => {
+    expect(escapeHtml("<script>alert('xss')</script>")).toBe("&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;");
+    expect(escapeHtml("test&value")).toBe("test&amp;value");
+    expect(escapeHtml('quote"test')).toBe("quote&quot;test");
+  });
+});
+
+describe("Complex ScVal type decoding", () => {
+  describe("detectScValType", () => {
+    it("detects Vec type from hex", () => {
+      expect(detectScValType("0x00000010")).toBe("Vec");
+    });
+
+    it("detects Map type from hex", () => {
+      expect(detectScValType("0x00000011")).toBe("Map");
+    });
+
+    it("detects Address type from 32-byte hex", () => {
+      const addressHex = "a".repeat(64);
+      expect(detectScValType(`0x${addressHex}`)).toBe("Address");
+    });
+
+    it("detects String type from hex", () => {
+      expect(detectScValType("0x0000000e")).toBe("String");
+      expect(detectScValType("0x0000000f")).toBe("String");
+    });
+
+    it("defaults to Bytes for unknown types", () => {
+      expect(detectScValType("0x12345678")).toBe("Bytes");
+    });
+
+    it("handles invalid hex", () => {
+      expect(detectScValType("invalid")).toBe("Void");
+    });
+  });
+
+  describe("decodeMap", () => {
+    it("decodes a map from hex", () => {
+      const mapHex = "0x00000011" + "a".repeat(64);
+      const result = decodeMap(mapHex);
+
+      expect(result.type).toBe("Map");
+      expect(result.entries).toBeDefined();
+      expect(result.summary).toContain("Map");
+    });
+
+    it("handles invalid map data", () => {
+      const result = decodeMap("invalid");
+
+      expect(result.type).toBe("Map");
+      expect(result.entries).toEqual([]);
+      expect(result.summary).toBe("Invalid map data");
+    });
+
+    it("handles empty map data", () => {
+      const result = decodeMap("");
+
+      expect(result.type).toBe("Map");
+      expect(result.entries).toEqual([]);
+    });
+  });
+
+  describe("decodeVec", () => {
+    it("decodes a vector from hex", () => {
+      const vecHex = "0x00000010" + "b".repeat(64);
+      const result = decodeVec(vecHex);
+
+      expect(result.type).toBe("Vec");
+      expect(result.elements).toBeDefined();
+      expect(result.summary).toContain("Vec");
+    });
+
+    it("handles invalid vector data", () => {
+      const result = decodeVec("invalid");
+
+      expect(result.type).toBe("Vec");
+      expect(result.elements).toEqual([]);
+      expect(result.summary).toBe("Invalid vector data");
+    });
+
+    it("handles empty vector data", () => {
+      const result = decodeVec("");
+
+      expect(result.type).toBe("Vec");
+      expect(result.elements).toEqual([]);
+    });
+  });
+
+  describe("decodeEnum", () => {
+    it("decodes an enum from hex", () => {
+      const enumHex = "0x00000003" + "c".repeat(32);
+      const result = decodeEnum(enumHex);
+
+      expect(result.type).toBe("Enum");
+      expect(result.variant).toBeDefined();
+      expect(result.summary).toContain("Enum");
+    });
+
+    it("decodes enum with known variants", () => {
+      const knownVariants = {
+        "00000003": "CustomVariant",
+      };
+      const enumHex = "0x00000003" + "d".repeat(32);
+      const result = decodeEnum(enumHex, knownVariants);
+
+      expect(result.variant).toBe("CustomVariant");
+    });
+
+    it("decodes enum with payload", () => {
+      const enumHex = "0x00000001" + "e".repeat(32);
+      const result = decodeEnum(enumHex);
+
+      expect(result.type).toBe("Enum");
+      expect(result.value).toBeDefined();
+      expect(result.summary).toContain("(");
+    });
+
+    it("handles invalid enum data", () => {
+      const result = decodeEnum("invalid");
+
+      expect(result.type).toBe("Enum");
+      expect(result.variant).toBe("unknown");
+      expect(result.summary).toBe("Invalid enum data");
+    });
+  });
+
+  describe("decodeScVal", () => {
+    it("dispatches to map decoder for Map type", () => {
+      const mapHex = "0x00000011" + "f".repeat(64);
+      const result = decodeScVal(mapHex);
+
+      expect(result.type).toBe("Map");
+    });
+
+    it("dispatches to vector decoder for Vec type", () => {
+      const vecHex = "0x00000010" + "0".repeat(64);
+      const result = decodeScVal(vecHex);
+
+      expect(result.type).toBe("Vec");
+    });
+
+    it("handles Address type", () => {
+      const addressHex = "0x" + "1".repeat(64);
+      const result = decodeScVal(addressHex);
+
+      expect(result.type).toBe("Address");
+      if (result.type === "Address" || result.type === "U128" || result.type === "Void") {
+        expect(result.value).toBeDefined();
+      }
+    });
+
+    it("handles U128 type", () => {
+      const u128Hex = "0x" + "2".repeat(32);
+      const result = decodeScVal(u128Hex);
+
+      expect(result.type).toBe("U128");
+      if (result.type === "Address" || result.type === "U128" || result.type === "Void") {
+        expect(result.value).toBeDefined();
+      }
+    });
+
+    it("handles invalid hex", () => {
+      const result = decodeScVal("invalid");
+
+      expect(result.type).toBe("Void");
+      if (result.type === "Address" || result.type === "U128" || result.type === "Void") {
+        expect(result.value).toBe("invalid");
+      }
+    });
   });
 });
