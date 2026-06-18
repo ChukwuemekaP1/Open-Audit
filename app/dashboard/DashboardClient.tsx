@@ -42,6 +42,7 @@ export function DashboardClient(): React.JSX.Element {
   const [searchedContract, setSearchedContract] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [events, setEvents] = useState<TranslatedEvent[]>([]);
 
   // Load previously uploaded ABIs from localStorage after mount. Doing this in
   // an effect (rather than during render) keeps the server and client output
@@ -60,7 +61,7 @@ export function DashboardClient(): React.JSX.Element {
 
   // Derive translations from the raw events + current custom blueprints so the
   // feed re-translates instantly when an ABI is uploaded or removed.
-  const events = useMemo(
+  const translatedEvents = useMemo(
     function () {
       return translateEvents(rawEvents, customBlueprints);
     },
@@ -110,6 +111,11 @@ export function DashboardClient(): React.JSX.Element {
   const handleAbiRemove = useCallback(function (contractId: string): void {
     setCustomAbis(removeCustomAbi(contractId));
   }, []);
+
+  // Combine initial translated events and live events
+  const allEvents = useMemo(() => {
+    return [...events, ...translatedEvents];
+  }, [events, translatedEvents]);
 
   return (
     <div className="space-y-6">
@@ -226,11 +232,11 @@ export function DashboardClient(): React.JSX.Element {
               {isLive ? "Stop Live" : "Live Feed"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              {isLoading ? "Loading..." : `${events.length} events`}
+              {isLoading ? "Loading..." : `${allEvents.length} events`}
             </span>
           </div>
         </div>
-        <EventFeedTable events={events} isLoading={isLoading} newEventIds={newEventIds} />
+        <EventFeedTable events={allEvents} isLoading={isLoading} newEventIds={newEventIds} />
       </section>
 
       {/* Contributor CTA */}
