@@ -9,6 +9,8 @@ interface SearchBarProps {
   onSearch: (contractId: string) => void;
   isLoading?: boolean;
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
 }
 
 const EXAMPLE_CONTRACTS = [
@@ -26,8 +28,18 @@ export function SearchBar({
   onSearch,
   isLoading = false,
   defaultValue = "",
+  value: controlledValue,
+  onValueChange,
 }: SearchBarProps): React.JSX.Element {
-  const [value, setValue] = useState(defaultValue);
+  const [internalValue, setInternalValue] = useState(defaultValue);
+  const value = controlledValue ?? internalValue;
+
+  function updateValue(nextValue: string): void {
+    if (controlledValue === undefined) {
+      setInternalValue(nextValue);
+    }
+    onValueChange?.(nextValue);
+  }
 
   function handleSubmit(e: FormEvent<HTMLFormElement>): void {
     e.preventDefault();
@@ -38,12 +50,12 @@ export function SearchBar({
   }
 
   function handleClear(): void {
-    setValue("");
+    updateValue("");
     onSearch("");
   }
 
   function handleExampleClick(contractId: string): void {
-    setValue(contractId);
+    updateValue(contractId);
     onSearch(contractId);
   }
 
@@ -55,7 +67,7 @@ export function SearchBar({
           <Input
             value={value}
             onChange={function (e) {
-              setValue(e.target.value);
+              updateValue(e.target.value);
             }}
             placeholder="Enter a Soroban Contract ID (C...)"
             className="pl-9 pr-9 font-mono text-sm"

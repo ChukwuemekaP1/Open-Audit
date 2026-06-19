@@ -1,22 +1,35 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { SearchBar } from "@/components/dashboard/SearchBar";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  ArrowRight,
+  BookOpen,
+  FileJson,
+  PauseCircle,
+  PlayCircle,
+  Radio,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
-import { AnalyticsSummaryCards } from "@/components/dashboard/AnalyticsSummaryCards";
+import { SearchBar } from "@/components/dashboard/SearchBar";
+import { StatsBar } from "@/components/dashboard/StatsBar";
 import { UploadAbiDialog } from "@/components/dashboard/UploadAbiDialog";
 import { ExportDataDialog } from "@/components/dashboard/ExportDataDialog";
 import { Button } from "@/components/ui/button";
+import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
+import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import {
   buildCustomBlueprints,
   loadCustomAbis,
   removeCustomAbi,
   saveCustomAbi,
 } from "@/lib/translator/custom-abi";
-import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
-import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
-import { useEventTranslator } from "@/lib/hooks/useEventTranslator";
-import type { RawEvent, TranslatedEvent, CustomAbi } from "@/lib/translator/types";
+import { translateEvents } from "@/lib/translator/registry";
+import type { CustomAbi, RawEvent, TranslatedEvent } from "@/lib/translator/types";
+
+const DEFAULT_PAGE_SIZE = 25;
 
 /** Simulates a network delay for realistic UX. */
 function simulateNetworkDelay(ms: number): Promise<void> {
@@ -29,25 +42,17 @@ export function DashboardClient(): React.JSX.Element {
   const [rawEvents, setRawEvents] = useState<RawEvent[]>(MOCK_RAW_EVENTS);
   const [customAbis, setCustomAbis] = useState<CustomAbi[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
   const [searchedContract, setSearchedContract] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  const { get: getParam, setParams } = useUrlSync();
-  // Captured once so the SearchBar input shows the deep-linked value on first
-  // paint, before the hydration effect fires the actual fetch.
-  const [initialContractParam] = useState(function () {
-    return getParam("contract");
-  });
-
-  // Load previously uploaded ABIs from localStorage after mount. Doing this in
-  // an effect (rather than during render) keeps the server and client output
-  // identical and avoids a hydration mismatch.
   useEffect(function () {
     setCustomAbis(loadCustomAbis());
   }, []);
 
-  // Custom ABIs are consulted before the global registry when translating.
   const customBlueprints = useMemo(
     function () {
       return buildCustomBlueprints(customAbis);
@@ -55,6 +60,7 @@ export function DashboardClient(): React.JSX.Element {
     [customAbis],
   );
 
+  const events = useMemo(
     function () {
       const translated = translateEvents(rawEvents, customBlueprints);
       return [...liveEvents, ...translated];
@@ -62,28 +68,46 @@ export function DashboardClient(): React.JSX.Element {
     [rawEvents, customBlueprints, liveEvents]
   );
 
-  const handleNewEvent = useCallback((event: TranslatedEvent) => {
+  const handleNewEvent = useCallback(
+    function (event: TranslatedEvent): void {
+      if (searchedContract && event.raw.contractId !== searchedContract) {
+        return;
+      }
 
-  }, []);
+      setRawEvents(function (prev) {
+        return [event.raw, ...prev];
+      });
+    },
+    [searchedContract]
+  );
 
   const { isLive, isPaused, newEventIds, toggleLive, togglePause } =
     useLiveFeed(handleNewEvent);
 
-  // Merge live events on top of the translated batch.
-  const events = useMemo(
-    () => [...liveEvents, ...translatedEvents],
-    [liveEvents, translatedEvents],
+  const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
+
+  useEffect(
+    function () {
+      setCurrentPage(function (prev) {
+        return Math.min(prev, totalPages);
+      });
+    },
+    [totalPages]
   );
 
-  // Clear live events whenever the base dataset changes.
-  useEffect(() => {
-    setLiveEvents([]);
-  }, [rawEvents]);
+  const paginatedEvents = useMemo(
+    function () {
+      const startIndex = (currentPage - 1) * pageSize;
+      return events.slice(startIndex, startIndex + pageSize);
+    },
+    [currentPage, events, pageSize]
+  );
 
-  const handleSearch = useCallback(async function (
-    contractId: string,
-  ): Promise<void> {
-    if (!contractId) {
+  const handleSearch = useCallback(async function (contractId: string): Promise<void> {
+    const trimmed = contractId.trim();
+    setCurrentPage(1);
+
+    if (!trimmed) {
       setRawEvents(MOCK_RAW_EVENTS);
       setSearchedContract(null);
       setError(null);
@@ -93,10 +117,9 @@ export function DashboardClient(): React.JSX.Element {
         await simulateNetworkDelay(800);
 
     try {
-      // Simulate fetching from Stellar network.
       await simulateNetworkDelay(800);
-      setRawEvents(getMockEventsForContract(contractId));
-      setSearchedContract(contractId);
+      setRawEvents(getMockEventsForContract(trimmed));
+      setSearchedContract(trimmed);
     } catch {
       setError(
         "Failed to fetch events. Please check the Contract ID and try again.",
@@ -115,56 +138,56 @@ export function DashboardClient(): React.JSX.Element {
     setCustomAbis(removeCustomAbi(contractId));
   }, []);
 
-  // Combined loading flag — show skeleton while fetching OR while the
-  // worker/chunker is loading translated results into state.
-  const isBusy = isLoading || isTranslating;
+  const handlePageChange = useCallback(function (page: number): void {
+    setCurrentPage(page);
+  }, []);
+
+  const handlePageSizeChange = useCallback(function (nextPageSize: number): void {
+    setPageSize(nextPageSize);
+    setCurrentPage(1);
+  }, []);
 
   return (
     <div className="space-y-6">
-      {/* Search */}
       <section aria-label="Contract search">
         <SearchBar
           onSearch={handleSearch}
           isLoading={isLoading}
-          defaultValue={initialContractParam}
+          value={searchValue}
+          onValueChange={setSearchValue}
         />
       </section>
 
-      {/* Error state */}
       {error && (
         <div
           role="alert"
           className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
         >
-          <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
           <p>{error}</p>
         </div>
       )}
 
-      {/* Active filter indicator */}
-      {searchedContract && !isBusy && (
+      {searchedContract && !isLoading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Showing events for:</span>
-          <code className="font-mono text-xs bg-muted px-2 py-1 rounded">
+          <code className="rounded bg-muted px-2 py-1 font-mono text-xs">
             {searchedContract.slice(0, 10)}...{searchedContract.slice(-6)}
           </code>
           <button
             type="button"
             onClick={function () {
+              setSearchValue("");
               handleSearch("");
             }}
-            className="text-violet-600 dark:text-violet-400 hover:underline text-xs"
+            className="text-xs text-violet-600 hover:underline dark:text-violet-400"
           >
             Clear filter
           </button>
         </div>
       )}
 
-      {/* Custom ABI controls */}
-      <section
-        aria-label="Custom ABIs"
-        className="flex flex-wrap items-center gap-2"
-      >
+      <section aria-label="Custom ABIs" className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -172,7 +195,7 @@ export function DashboardClient(): React.JSX.Element {
             setIsUploadOpen(true);
           }}
         >
-          <Upload className="h-4 w-4 mr-2" />
+          <Upload className="mr-2 h-4 w-4" />
           Upload Custom ABI
         </Button>
 
@@ -180,7 +203,7 @@ export function DashboardClient(): React.JSX.Element {
           return (
             <span
               key={abi.contractId}
-              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 pl-2.5 pr-1.5 py-1 text-xs"
+              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 py-1 pl-2.5 pr-1.5 text-xs"
               title={abi.contractId}
             >
               <FileJson className="h-3.5 w-3.5 text-violet-500" />
@@ -190,7 +213,7 @@ export function DashboardClient(): React.JSX.Element {
                 onClick={function () {
                   handleAbiRemove(abi.contractId);
                 }}
-                className="text-muted-foreground hover:text-destructive transition-colors"
+                className="text-muted-foreground transition-colors hover:text-destructive"
                 aria-label={`Remove custom ABI for ${abi.contractName}`}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -200,13 +223,11 @@ export function DashboardClient(): React.JSX.Element {
         })}
       </section>
 
-      {/* Stats */}
-      {!isBusy && <StatsBar events={events} />}
+      {!isLoading && <StatsBar events={events} />}
 
-      {/* Feed */}
       <section aria-label="Event feed">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Event Feed
           </h2>
           <div className="flex items-center gap-2">
@@ -235,12 +256,12 @@ export function DashboardClient(): React.JSX.Element {
               >
                 {isPaused ? (
                   <>
-                    <PlayCircle className="h-3.5 w-3.5 mr-1 text-green-500" />
+                    <PlayCircle className="mr-1 h-3.5 w-3.5 text-green-500" />
                     Resume
                   </>
                 ) : (
                   <>
-                    <PauseCircle className="h-3.5 w-3.5 mr-1 text-amber-500" />
+                    <PauseCircle className="mr-1 h-3.5 w-3.5 text-amber-500" />
                     Pause
                   </>
                 )}
@@ -256,9 +277,7 @@ export function DashboardClient(): React.JSX.Element {
               }`}
               onClick={toggleLive}
             >
-              <Radio
-                className={`h-3.5 w-3.5 mr-1.5 ${isLive ? "animate-pulse" : ""}`}
-              />
+              <Radio className={`mr-1.5 h-3.5 w-3.5 ${isLive ? "animate-pulse" : ""}`} />
               {isLive ? "Stop Live" : "Live Feed"}
             </Button>
             <span className="text-xs text-muted-foreground">
@@ -266,26 +285,32 @@ export function DashboardClient(): React.JSX.Element {
             </span>
           </div>
         </div>
+
         <EventFeedTable
-          events={events}
-          isLoading={isBusy}
+          events={paginatedEvents}
+          isLoading={isLoading}
           newEventIds={newEventIds}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={events.length}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
         />
       </section>
 
-      {/* Contributor CTA */}
       <section
         aria-label="Contribute"
-        className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 p-5"
+        className="rounded-lg border border-violet-200 bg-violet-50 p-5 dark:border-violet-800 dark:bg-violet-950/30"
       >
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex items-start gap-3">
-            <BookOpen className="h-5 w-5 text-violet-600 dark:text-violet-400 mt-0.5 flex-shrink-0" />
+            <BookOpen className="mt-0.5 h-5 w-5 flex-shrink-0 text-violet-600 dark:text-violet-400" />
             <div>
               <p className="text-sm font-medium">Help translate more contracts</p>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Open-Audit is community-powered. Add a translation blueprint and
-                earn Stellar Drips rewards.
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Open-Audit is community-powered. Add a translation blueprint and earn Stellar Drips
+                rewards.
               </p>
             </div>
           </div>
@@ -293,7 +318,7 @@ export function DashboardClient(): React.JSX.Element {
             href="https://github.com/your-org/open-audit/blob/main/CONTRIBUTING.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-sm font-medium text-violet-700 dark:text-violet-400 hover:underline whitespace-nowrap"
+            className="flex items-center gap-1.5 whitespace-nowrap text-sm font-medium text-violet-700 hover:underline dark:text-violet-400"
           >
             Read the guide
             <ArrowRight className="h-4 w-4" />
@@ -301,7 +326,6 @@ export function DashboardClient(): React.JSX.Element {
         </div>
       </section>
 
-      {/* Upload dialog */}
       <UploadAbiDialog
         open={isUploadOpen}
         onOpenChange={setIsUploadOpen}

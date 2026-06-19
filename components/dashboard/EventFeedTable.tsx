@@ -100,6 +100,24 @@ interface EventFeedTableProps {
   events: TranslatedEvent[];
   isLoading?: boolean;
   newEventIds?: Set<string>;
+  currentPage: number;
+  totalPages: number;
+  pageSize: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}
+
+const PAGE_SIZE_OPTIONS = [25, 50];
+
+function getVisiblePages(currentPage: number, totalPages: number): number[] {
+  const start = Math.max(1, currentPage - 1);
+  const end = Math.min(totalPages, start + 2);
+  const normalizedStart = Math.max(1, end - 2);
+
+  return Array.from({ length: end - normalizedStart + 1 }, function (_, index) {
+    return normalizedStart + index;
+  });
 }
 
 function StatusBadge({ status }: { status: TranslatedEvent["status"] }): React.JSX.Element {
@@ -178,10 +196,19 @@ export function EventFeedTable({
   events,
   isLoading = false,
   newEventIds = new Set(),
+  currentPage,
+  totalPages,
+  pageSize,
+  totalItems,
+  onPageChange,
+  onPageSizeChange,
 }: EventFeedTableProps): React.JSX.Element {
   const tableTopRef = useRef<HTMLDivElement>(null);
   const [rawDialogEvent, setRawDialogEvent] = useState<RawEvent | null>(null);
   const [contributeDialogEvent, setContributeDialogEvent] = useState<RawEvent | null>(null);
+  const visiblePages = getVisiblePages(currentPage, totalPages);
+  const rangeStart = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = totalItems === 0 ? 0 : rangeStart + events.length - 1;
 
   const { get: getParam, setParams } = useUrlSync();
 
@@ -578,53 +605,89 @@ export function EventFeedTable({
                       })}
                     </TableRow>
                   );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={columns.length}
-                    className="text-center py-12 text-muted-foreground"
-                  >
-                    No events found. Adjust your filters or search.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                })}
 
-        {/* Pagination Controls */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
-          {/* Row count — aria-live so screen readers announce changes */}
-          <div aria-live="polite" aria-atomic="true" className="text-sm text-muted-foreground">
-            Showing {visibleCount} of {filteredCount} events
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange("prev")}
-              disabled={!table.getCanPreviousPage()}
-              aria-disabled={!table.getCanPreviousPage()}
-              aria-label="Previous page"
-            >
-              Previous
-            </Button>
-            <div className="text-sm font-medium" aria-live="polite" aria-atomic="true">
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
+            {!isLoading && events.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                  No events found. Enter a Contract ID above to search.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+
+        {!isLoading && totalItems > 0 && (
+          <div className="flex flex-col gap-3 border-t bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center">
+              <span>
+                Showing {rangeStart}-{rangeEnd} of {totalItems} events
+              </span>
+              <label className="flex items-center gap-2">
+                <span>Rows</span>
+                <select
+                  value={pageSize}
+                  onChange={function (e) {
+                    onPageSizeChange(Number(e.target.value));
+                  }}
+                  className="h-8 rounded-md border bg-background px-2 text-foreground"
+                  aria-label="Records per page"
+                >
+                  {PAGE_SIZE_OPTIONS.map(function (option) {
+                    return (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange("next")}
-              disabled={!table.getCanNextPage()}
-              aria-disabled={!table.getCanNextPage()}
-              aria-label="Next page"
-            >
-              Next
-            </Button>
+
+            <div className="flex items-center gap-1 self-end sm:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3"
+                onClick={function () {
+                  onPageChange(currentPage - 1);
+                }}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+
+              {visiblePages.map(function (page) {
+                return (
+                  <Button
+                    key={page}
+                    variant={page === currentPage ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 min-w-8 px-2"
+                    onClick={function () {
+                      onPageChange(page);
+                    }}
+                    aria-current={page === currentPage ? "page" : undefined}
+                  >
+                    {page}
+                  </Button>
+                );
+              })}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3"
+                onClick={function () {
+                  onPageChange(currentPage + 1);
+                }}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <RawDataDialog
