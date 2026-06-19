@@ -108,11 +108,12 @@ export interface CustomAbiField {
   type: string;
 }
 
-/** Decoded XDR address (simplified representation). */
+/** Decoded XDR address. The publicKey is a canonical Stellar address string
+ *  starting with G (account) or C (contract). */
 export interface DecodedAddress {
-  /** The full Stellar public key (G... address). */
+  /** The full canonical Stellar address (G... or C...). */
   publicKey: string;
-  /** A shortened display version, e.g. "GABC...1234". */
+  /** A shortened display version, e.g. "GABC...1234" or "CDLZ...YSC". */
   short: string;
 }
 
