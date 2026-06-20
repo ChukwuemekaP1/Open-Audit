@@ -126,9 +126,9 @@ export function translateEvent(
   }
 
   // 2. Fall back to the global community registry.
-  const blueprint = REGISTRY.get(event.contractId);
+  const entry = REGISTRY.get(event.contractId);
 
-  if (!blueprint) {
+  if (!entry) {
     console.warn(`No translation blueprint found for contract ${event.contractId}`);
     return {
       raw: event,
@@ -138,6 +138,21 @@ export function translateEvent(
       blueprintName: custom?.contractName ?? null,
       eventType: null,
       schemaVersion: null,
+    };
+  }
+
+  const blueprint = Array.isArray(entry)
+    ? resolveBlueprint(entry, event.ledger)
+    : entry;
+
+  if (!blueprint) {
+    console.warn(`No translation blueprint applicable for contract ${event.contractId} at ledger ${event.ledger}`);
+    return {
+      raw: event,
+      description: `[Unknown Event: No blueprint applicable for contract ${event.contractId} at ledger ${event.ledger}. Hex Data: ${event.data}]`,
+      status: "cryptic",
+      blueprintName: Array.isArray(entry) ? entry[0].contractName : entry.contractName,
+      eventType: null,
     };
   }
 

@@ -17,7 +17,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
-    "prisma": "^5.8.0",
+    "@prisma/client": "^5.22.0",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-slot": "^1.0.2",
     "@radix-ui/react-toast": "^1.2.17",
@@ -26,11 +26,13 @@
     "bull": "^4.11.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "graphql": "^17.0.1",
     "ioredis": "^5.11.1",
     "lucide-react": "^0.378.0",
     "next": "14.2.3",
     "node-cron": "^3.0.3",
     "pino": "^8.17.2",
+    "prisma": "^5.8.0",
     "react": "^18",
     "react-dom": "^18",
     "react-syntax-highlighter": "^16.1.1",
@@ -42,7 +44,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/bull": "^4.10.8",
+    "@types/bull": "^4.10.4",
     "@types/ioredis": "^4.28.10",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
