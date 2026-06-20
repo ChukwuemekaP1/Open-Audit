@@ -26,14 +26,18 @@
     "react-dom": "^18",
     "react-syntax-highlighter": "^16.1.1",
     "stellar-sdk": "^12.1.0",
+    "swagger-ui-react": "^5.32.6",
     "tailwind-merge": "^2.3.0",
     "tailwindcss-animate": "^1.0.7",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/ioredis": "^4.28.10",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/swagger-ui-react": "^5.18.0",
     "@types/ws": "^8.5.13",
     "@typescript-eslint/eslint-plugin": "^7.9.0",
     "@typescript-eslint/parser": "^7.9.0",
