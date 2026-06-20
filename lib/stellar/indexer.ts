@@ -74,12 +74,75 @@ export function calculateRetryDelay(
   return Math.min(delay, config.maxDelayMs);
 }
 
+function parseRetryAfterHeader(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  const seconds = Number(value);
+  if (!Number.isNaN(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+
+  const parsedDate = Date.parse(value);
+  if (!Number.isNaN(parsedDate)) {
+    const diff = parsedDate - Date.now();
+    return diff > 0 ? diff : 0;
+  }
+
+  return null;
+}
+
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (error && typeof error === "object") {
+    const anyError = error as Record<string, unknown>;
+    if (typeof anyError.status === "number") {
+      return anyError.status;
+    }
+    if (typeof anyError.statusCode === "number") {
+      return anyError.statusCode;
+    }
+    const response = anyError.response as Record<string, unknown> | undefined;
+    if (response) {
+      if (typeof response.status === "number") {
+        return response.status;
+      }
+      if (typeof response.statusCode === "number") {
+        return response.statusCode;
+      }
+    }
+  }
+  return undefined;
+}
+
+function getRetryAfterMs(error: unknown): number | null {
+  if (error && typeof error === "object") {
+    const anyError = error as Record<string, unknown>;
+    const response = anyError.response as Record<string, unknown> | undefined;
+    const headers = response?.headers ?? anyError.headers;
+
+    if (headers) {
+      if (typeof (headers as any).get === "function") {
+        return parseRetryAfterHeader((headers as any).get("retry-after"));
+      }
+      if (typeof (headers as any)["retry-after"] === "string") {
+        return parseRetryAfterHeader((headers as any)["retry-after"]);
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Checks if an error is an HTTP 429 (Too Many Requests) error.
  */
 function isRateLimitError(error: unknown): boolean {
+  const statusCode = getErrorStatusCode(error);
+  if (statusCode === 429) {
+    return true;
+  }
+
   if (error instanceof Error) {
-    // Check for common patterns in stellar-sdk errors
     const message = error.message.toLowerCase();
     return (
       message.includes("429") ||
@@ -87,6 +150,17 @@ function isRateLimitError(error: unknown): boolean {
       message.includes("rate limit")
     );
   }
+
+  if (error && typeof error === "object") {
+    const anyError = error as Record<string, unknown>;
+    const message = String(anyError.message ?? anyError.error ?? "").toLowerCase();
+    return (
+      message.includes("429") ||
+      message.includes("too many requests") ||
+      message.includes("rate limit")
+    );
+  }
+
   return false;
 }
 
@@ -160,15 +234,16 @@ export async function fetchEventsWithRetry(
         );
       }
 
-      // Calculate backoff delay
-      const delayMs = calculateRetryDelay(attempt, retryConfig);
+      const retryAfterMs = getRetryAfterMs(error);
+      const delayMs = retryAfterMs ?? calculateRetryDelay(attempt, retryConfig);
+      const cappedDelayMs = Math.min(delayMs, retryConfig.maxDelayMs);
 
       console.warn(
-        `[indexer] Rate limit hit (429). Retrying in ${delayMs}ms (attempt ${attempt + 1}/${retryConfig.maxRetries})...`
+        `[indexer] Rate limit hit (429). Retrying in ${cappedDelayMs}ms (attempt ${attempt + 1}/${retryConfig.maxRetries})...`
       );
 
       // Wait before retrying
-      await sleep(delayMs);
+      await sleep(cappedDelayMs);
     }
   }
 
@@ -286,9 +361,12 @@ export function startEventIndexer(options: IndexerOptions): IndexerControls {
         if (response.latestLedger) {
           cursor = {
             lastLedger: response.latestLedger,
-
+            paginationCursor: response.cursor,
           };
-          console.log(`[indexer] Cursor updated to ledger ${cursor.lastLedger}`);
+          console.log(
+            `[indexer] Cursor updated to ledger ${cursor.lastLedger}` +
+              (cursor.paginationCursor ? `, cursor ${cursor.paginationCursor}` : "")
+          );
         }
 
         // Wait before next poll

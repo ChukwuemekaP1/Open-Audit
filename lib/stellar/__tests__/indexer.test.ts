@@ -104,6 +104,41 @@ describe("fetchEventsWithRetry", function () {
     expect(mockServer.getEvents).toHaveBeenCalledTimes(3);
   });
 
+  it("should honor Retry-After header on 429 and eventually succeed", async function () {
+    const mockResponse = {
+      events: [{ id: "event-1" }],
+      latestLedger: 2000,
+    };
+
+    const rateLimitError = new Error("Too Many Requests");
+    (rateLimitError as any).status = 429;
+    (rateLimitError as any).response = {
+      headers: {
+        get: vi.fn().mockReturnValue("1"),
+      },
+    };
+
+    mockServer.getEvents
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce(mockResponse);
+
+    const result = await fetchEventsWithRetry(
+      mockServer as unknown as SorobanRpc.Server,
+      ["contract-1"],
+      1000,
+      {
+        initialDelayMs: 10,
+        maxDelayMs: 100,
+        maxRetries: 5,
+        backoffMultiplier: 2,
+      }
+    );
+
+    expect(result).toEqual(mockResponse);
+    expect(mockServer.getEvents).toHaveBeenCalledTimes(2);
+    expect((rateLimitError as any).response.headers.get).toHaveBeenCalledWith("retry-after");
+  });
+
   it("should throw immediately on non-rate-limit errors", async function () {
     mockServer.getEvents.mockRejectedValue(new Error("Network connection failed"));
 
