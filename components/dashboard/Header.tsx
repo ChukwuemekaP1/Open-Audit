@@ -4,9 +4,17 @@ import { useState } from "react";
 import { Eye, Github, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { useNetwork, type Network } from "@/lib/hooks/useNetwork";
+
+const NETWORK_OPTIONS: { id: Network; label: string }[] = [
+  { id: "testnet", label: "Testnet" },
+  { id: "mainnet", label: "Mainnet" },
+  { id: "futurenet", label: "Futurenet" },
+];
 
 export function Header(): React.JSX.Element {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { network, setNetwork } = useNetwork();
 
   function toggleMobileMenu(): void {
     setMobileMenuOpen(function (prev) {
@@ -63,6 +71,23 @@ export function Header(): React.JSX.Element {
           {/* Right side */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
+
+            <div className="hidden md:flex items-center gap-2">
+              <label className="text-sm text-muted-foreground">Network</label>
+              <select
+                className="border rounded-md p-1 bg-transparent text-sm"
+                value={network}
+                onChange={(e) => setNetwork(e.target.value as Network)}
+                aria-label="Select network"
+              >
+                {NETWORK_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Mobile menu button */}
             <Button
               variant="ghost"
@@ -89,6 +114,22 @@ export function Header(): React.JSX.Element {
                 Sandbox
               </a>
             </Button>
+            {/* Mobile network selector */}
+            <div className="px-3">
+              <label className="text-xs text-muted-foreground">Network</label>
+              <select
+                className="w-full border rounded-md p-2 mt-1 bg-transparent text-sm"
+                value={network}
+                onChange={(e) => setNetwork(e.target.value as Network)}
+                aria-label="Select network"
+              >
+                {NETWORK_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
               <a
                 href="https://github.com/your-org/open-audit"

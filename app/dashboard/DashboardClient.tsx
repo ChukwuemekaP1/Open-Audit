@@ -10,6 +10,7 @@ import { ExportDataDialog } from "@/components/dashboard/ExportDataDialog";
 import { Button } from "@/components/ui/button";
 import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
 import { useLanguage } from "@/lib/hooks/useLanguage";
+import { useNetwork } from "@/lib/hooks/useNetwork";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import {
   buildCustomBlueprints,
@@ -38,6 +39,7 @@ export function DashboardClient(): React.JSX.Element {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const { language } = useLanguage();
+  const { network } = useNetwork();
   const [liveEvents, setLiveEvents] = useState<TranslatedEvent[]>([]);
 
   useEffect(function () {

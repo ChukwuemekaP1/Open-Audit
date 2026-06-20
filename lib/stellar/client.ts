@@ -18,6 +18,8 @@ export interface StellarNetworkConfig {
   networkPassphrase: string;
 }
 
+export type Network = "testnet" | "mainnet" | "futurenet";
+
 /** Default testnet configuration. */
 export const TESTNET_CONFIG: StellarNetworkConfig = {
   horizonUrl:
@@ -35,12 +37,24 @@ export const MAINNET_CONFIG: StellarNetworkConfig = {
   networkPassphrase: "Public Global Stellar Network ; September 2015",
 };
 
+/** Futurenet is a developer network; mirror of testnet but with different endpoints if available. */
+export const FUTURENET_CONFIG: StellarNetworkConfig = {
+  horizonUrl: TESTNET_CONFIG.horizonUrl,
+  sorobanRpcUrl: TESTNET_CONFIG.sorobanRpcUrl,
+  networkPassphrase: TESTNET_CONFIG.networkPassphrase,
+};
+
 /**
  * Returns the active network config based on the environment variable.
  */
-export function getNetworkConfig(): StellarNetworkConfig {
-  const network = process.env.NEXT_PUBLIC_NETWORK ?? "testnet";
-  return network === "mainnet" ? MAINNET_CONFIG : TESTNET_CONFIG;
+/**
+ * Return config by network id.
+ * Defaults to testnet for unknown values.
+ */
+export function getConfigForNetwork(network: Network | string): StellarNetworkConfig {
+  if (network === "mainnet") return MAINNET_CONFIG;
+  if (network === "futurenet") return FUTURENET_CONFIG;
+  return TESTNET_CONFIG;
 }
 
 /**

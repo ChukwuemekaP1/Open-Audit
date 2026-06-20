@@ -11,7 +11,7 @@
  */
 
 import { startEventIndexer } from "./indexer";
-import { getNetworkConfig } from "./client";
+import { getConfigForNetwork } from "./client";
 import { eventResponseToRawEvent } from "./events";
 import { translateEvents } from "@/lib/translator/registry";
 import type { SorobanRpc } from "stellar-sdk";
@@ -92,13 +92,15 @@ const eventStore = new EventStore();
  *
  * @param contractId - The contract ID to monitor
  * @param startLedger - The ledger to start from (defaults to 1000 ledgers ago)
+ * @param network - The network to use (defaults to "testnet")
  * @returns Indexer controls to stop monitoring
  */
 export function startMonitoringContract(
   contractId: string,
-  startLedger?: number
+  startLedger?: number,
+  network: Network = "testnet"
 ): ReturnType<typeof startEventIndexer> {
-  const networkConfig = getNetworkConfig();
+  const networkConfig = getConfigForNetwork(network);
 
   console.log(`[indexer-service] Starting indexer for contract ${contractId}`);
 
