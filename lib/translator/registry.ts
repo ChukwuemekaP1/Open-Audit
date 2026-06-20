@@ -19,7 +19,7 @@
 
 import { createAllSacBlueprints } from "./blueprints/sac-transfer";
 import { createSacMintBurnBlueprint } from "./blueprints/sac-mint-burn";
-import { decodeEventName } from "./decode";
+import { decodeEventName } from "./core";
 import type {
   EventMatchCriteria,
   RawEvent,
@@ -127,9 +127,10 @@ export function translateEvent(
   const blueprint = REGISTRY.get(event.contractId);
 
   if (!blueprint) {
+    console.warn(`No translation blueprint found for contract ${event.contractId}`);
     return {
       raw: event,
-      description: null,
+      description: `[Unknown Event: No blueprint registered for contract ${event.contractId}. Hex Data: ${event.data}]`,
       status: "cryptic",
       // Surface the custom contract name (if any) so the UI still has context.
       blueprintName: custom?.contractName ?? null,
