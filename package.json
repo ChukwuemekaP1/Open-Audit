@@ -20,9 +20,12 @@
     "db:generate": "prisma generate",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio"
-
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.2.0",
+    "@opentelemetry/exporter-jaeger": "^1.0.0",
+    "@opentelemetry/instrumentation-http": "^0.39.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-dialog": "^1.0.5",
     "@radix-ui/react-slot": "^1.0.2",
@@ -39,20 +42,18 @@
     "node-cron": "^3.0.3",
     "pino": "^8.17.2",
     "prisma": "^5.8.0",
+    "prom-client": "^14.0.0",
     "react": "^18",
     "react-dom": "^18",
+    "react-force-graph-3d": "^1.25.0",
     "react-syntax-highlighter": "^16.1.1",
     "redis": "^4.6.12",
     "stellar-sdk": "^12.1.0",
     "swagger-ui-react": "^5.32.6",
     "tailwind-merge": "^2.3.0",
     "tailwindcss-animate": "^1.0.7",
-    "ws": "^8.18.0",
-    "prom-client": "^14.0.0",
-    "@opentelemetry/api": "^1.2.0",
-    "@opentelemetry/sdk-node": "^1.0.0",
-    "@opentelemetry/exporter-jaeger": "^1.0.0",
-    "@opentelemetry/instrumentation-http": "^0.39.0"
+    "three": "^0.179.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/bull": "^4.10.4",
