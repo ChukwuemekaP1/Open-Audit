@@ -12,10 +12,10 @@ datasource db {
 
 model Event {
   id              String   @id @unique
-  contractId      String   @index
-  ledger          Int      @index
+  contractId      String
+  ledger          Int
   timestamp       Int
-  txHash          String   @index
+  txHash          String
   topics          Json     // Store as JSON array
   data            String
   description     String?  // Translated human-readable text
@@ -31,6 +31,9 @@ model Event {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  @@index([contractId])
+  @@index([ledger])
+  @@index([txHash])
   @@index([contractId, ledger])
   @@index([timestamp])
 }
@@ -73,14 +76,17 @@ model ReconciliationJob {
 // Audit trail for reconciliation actions
 model AuditLog {
   id              String   @id @default(cuid())
-  jobId           String   @index
+  jobId           String
   action          String   // "detected" | "fixed" | "flagged" | "verified"
-  eventId         String?  @index
+  eventId         String?
   ledger          Int?
   details         Json     // Additional context
   metadata        Json?    // Request headers, IP, etc.
 
   createdAt       DateTime @default(now())
+
+  @@index([jobId])
+  @@index([eventId])
 }
 
 // Configuration for reconciliation
