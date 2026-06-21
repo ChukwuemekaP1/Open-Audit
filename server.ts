@@ -14,6 +14,7 @@ import { translateEvent } from "./lib/translator/registry";
 import { createFileIngestionStateStore, startHorizonStreamingIndexer } from "./lib/stellar/indexer";
 import { getNetworkConfig } from "./lib/stellar/client";
 import { captureExceptionSync, eventsIngestedTotal, metricsHandler, recordTranslationDuration, startTelemetry } from "./lib/telemetry";
+import { startRetentionScheduler } from "./lib/retention/scheduler";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = parseInt(process.env.PORT ?? "3000", 10);
@@ -34,6 +35,7 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   await startTelemetry();
+  startRetentionScheduler();
   const httpServer = createServer((req, res) => {
     res.setHeader(
       "Content-Security-Policy",
