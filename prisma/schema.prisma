@@ -90,6 +90,31 @@ model AuditLog {
   @@index([eventId])
 }
 
+// Records every data-retention archive run for observability and audit
+model ArchiveLog {
+  id            String   @id @default(cuid())
+  /// ISO cutoff date used for this run
+  cutoffDate    DateTime
+  /// Number of rows written to the archive flat file
+  rowsArchived  Int      @default(0)
+  /// Number of rows deleted from Event (should equal rowsArchived on success)
+  rowsDeleted   Int      @default(0)
+  /// Absolute path of the produced .csv.gz file (empty if no data / failure)
+  archiveFile   String   @default("")
+  /// Wall-clock duration in milliseconds
+  durationMs    Int      @default(0)
+  /// "success" | "failed" | "skipped"
+  status        String   @default("success")
+  /// Error message populated on failure
+  errorMessage  String?
+  /// "cron" | "manual"
+  triggeredBy   String   @default("cron")
+
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 // Configuration for reconciliation
 model ReconciliationConfig {
   id              String   @id @default("current")

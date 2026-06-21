@@ -19,8 +19,7 @@ import {
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useToast } from "@/lib/hooks/use-toast";
-import { useIpfsResolver } from "@/lib/hooks/useIpfsResolver";
-import { isIpfsPointer } from "@/lib/ipfs/offloader";
+import { InclusionProofPanel } from "@/components/dashboard/InclusionProofPanel";
 import type { RawEvent } from "@/lib/translator/types";
 
 interface RawDataDialogProps {
@@ -245,6 +244,9 @@ export function RawDataDialog({
               </a>
             </Button>
           </div>
+
+          {/* Cryptographic inclusion proof verifier */}
+          <InclusionProofPanel txHash={event.txHash} ledger={event.ledger} />
         </div>
       </DialogContent>
     </Dialog>
