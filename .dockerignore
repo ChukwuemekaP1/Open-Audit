@@ -7,6 +7,7 @@
 .next
 .server-dist
 node_modules
+dist
 
 # Environment files — never bake secrets into images
 .env*
@@ -16,16 +17,24 @@ node_modules
 .github
 .kiro
 
-# Documentation
+# Documentation (not needed at build time)
 *.md
 docs/
 
-# Test artefacts
+# Test artefacts — excluded so clean builds skip test-only sources
 coverage/
 *.test.*
 __tests__/
+**/*.spec.ts
+**/*.spec.tsx
 
-# Editor / OS noise
+# Local dev / editor noise
 .DS_Store
 *.log
 Thumbs.db
+.vscode
+.idea
+
+# Keep native addon sources and prisma schema — required by multi-stage build
+!native/
+!prisma/

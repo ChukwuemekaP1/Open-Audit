@@ -1,9 +1,9 @@
 import { Counter, Histogram, Registry, collectDefaultMetrics } from "prom-client";
 import { context, diag, DiagConsoleLogger, DiagLogLevel, trace } from "@opentelemetry/api";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { JaegerExporter } from "@opentelemetry/exporter-jaeger";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
-import { Resource } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 
 export const metricsRegistry = new Registry();
@@ -37,16 +37,17 @@ export const translationProcessingMs = new Histogram({
   registers: [metricsRegistry],
 });
 
-const jaegerEndpoint = process.env.JAEGER_ENDPOINT ?? "http://localhost:14268/api/traces";
+// OTLP gRPC endpoint — Jaeger 1.35+ accepts OTLP natively on port 4317.
+// Set OTEL_EXPORTER_OTLP_ENDPOINT in your environment to override (e.g. "http://jaeger:4317").
+const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4317";
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "open-audit";
 
 const sdk = new NodeSDK({
-  traceExporter: new JaegerExporter({
-    endpoint: jaegerEndpoint,
-    serviceName,
+  traceExporter: new OTLPTraceExporter({
+    url: otlpEndpoint,
   }),
   instrumentations: [new HttpInstrumentation()],
-  resource: new Resource({
+  resource: resourceFromAttributes({
     [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
   }),
 });
@@ -56,7 +57,7 @@ export const tracer = trace.getTracer("open-audit");
 export async function startTelemetry(): Promise<void> {
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
   await sdk.start();
-  console.log(`[telemetry] OpenTelemetry initialized (Jaeger endpoint=${jaegerEndpoint})`);
+  console.log(`[telemetry] OpenTelemetry initialized (OTLP endpoint=${otlpEndpoint})`);
 }
 
 export async function shutdownTelemetry(): Promise<void> {

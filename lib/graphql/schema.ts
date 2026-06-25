@@ -6,26 +6,45 @@ import {
   GraphQLBoolean,
   GraphQLList,
   GraphQLNonNull,
+  GraphQLFieldConfigMap,
 } from "graphql";
 import { db } from "../db/client";
 import {
   getRegisteredContracts,
   registerBlueprint,
-  translateEvent,
+  translateWithCache,
 } from "../translator/registry";
 import {
   decodeAddress,
   decodeAmount,
   truncateHex,
 } from "../translator/core";
+import type { CustomAbi } from "../translator/types";
 import {
-  CustomAbi,
   customAbiToBlueprint,
   parseCustomAbi,
 } from "../translator/custom-abi";
+import { purgeTranslationCache } from "../cache/redisCache";
 
 // In-memory server-side registry of custom ABIs
 export const SERVER_CUSTOM_ABIS = new Map<string, CustomAbi>();
+
+function buildPersistedRawEvent(event: any) {
+  return {
+    id: event.id,
+    contractId: event.contractId,
+    ledger: event.ledger,
+    timestamp: event.timestamp,
+    txHash: event.txHash,
+    topics: event.topics as string[],
+    data: event.data,
+    description: event.description ?? undefined,
+    status: event.status ?? undefined,
+    blueprintName: event.blueprintName ?? undefined,
+    eventType: event.eventType ?? undefined,
+    schemaVersion: event.schemaVersion ?? undefined,
+  };
+}
 
 // Cache for the generated schema
 let cachedSchema: GraphQLSchema | null = null;
@@ -71,6 +90,7 @@ const EventType = new GraphQLObjectType({
     status: { type: new GraphQLNonNull(GraphQLString) },
     blueprintName: { type: GraphQLString },
     eventType: { type: GraphQLString },
+    ipfsCids: { type: new GraphQLList(new GraphQLNonNull(GraphQLString)) },
     rpcVerified: { type: new GraphQLNonNull(GraphQLBoolean) },
     createdAt: { type: new GraphQLNonNull(GraphQLString) },
     updatedAt: { type: new GraphQLNonNull(GraphQLString) },
@@ -179,7 +199,7 @@ export function buildSchema(): GraphQLSchema {
   if (cachedSchema) return cachedSchema;
 
   const customEventTypes = buildCustomEventTypes(SERVER_CUSTOM_ABIS);
-  const queryFields: Record<string, any> = {
+  const queryFields: GraphQLFieldConfigMap<any, any> = {
     // 1. Generic queries
     events: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(EventType))),
@@ -251,16 +271,8 @@ export function buildSchema(): GraphQLSchema {
         });
         const results: any[] = [];
         for (const event of events) {
-          const rawEvent = {
-            id: event.id,
-            contractId: event.contractId,
-            ledger: event.ledger,
-            timestamp: event.timestamp,
-            txHash: event.txHash,
-            topics: event.topics as string[],
-            data: event.data,
-          };
-          const translated = translateEvent(rawEvent);
+          const rawEvent = buildPersistedRawEvent(event);
+          const translated = await translateWithCache(rawEvent);
           if (translated.eventType === "Transfer" && rawEvent.topics.length >= 3) {
             results.push({
               id: rawEvent.id,
@@ -296,16 +308,8 @@ export function buildSchema(): GraphQLSchema {
         });
         const results: any[] = [];
         for (const event of events) {
-          const rawEvent = {
-            id: event.id,
-            contractId: event.contractId,
-            ledger: event.ledger,
-            timestamp: event.timestamp,
-            txHash: event.txHash,
-            topics: event.topics as string[],
-            data: event.data,
-          };
-          const translated = translateEvent(rawEvent);
+          const rawEvent = buildPersistedRawEvent(event);
+          const translated = await translateWithCache(rawEvent);
           if (translated.eventType === "Mint" && rawEvent.topics.length >= 3) {
             results.push({
               id: rawEvent.id,
@@ -341,16 +345,8 @@ export function buildSchema(): GraphQLSchema {
         });
         const results: any[] = [];
         for (const event of events) {
-          const rawEvent = {
-            id: event.id,
-            contractId: event.contractId,
-            ledger: event.ledger,
-            timestamp: event.timestamp,
-            txHash: event.txHash,
-            topics: event.topics as string[],
-            data: event.data,
-          };
-          const translated = translateEvent(rawEvent);
+          const rawEvent = buildPersistedRawEvent(event);
+          const translated = await translateWithCache(rawEvent);
           if (translated.eventType === "Burn" && rawEvent.topics.length >= 2) {
             results.push({
               id: rawEvent.id,
@@ -399,16 +395,8 @@ export function buildSchema(): GraphQLSchema {
             });
             const results: any[] = [];
             for (const event of events) {
-              const rawEvent = {
-                id: event.id,
-                contractId: event.contractId,
-                ledger: event.ledger,
-                timestamp: event.timestamp,
-                txHash: event.txHash,
-                topics: event.topics as string[],
-                data: event.data,
-              };
-              const translated = translateEvent(rawEvent);
+              const rawEvent = buildPersistedRawEvent(event);
+              const translated = await translateWithCache(rawEvent);
               if (translated.eventType === capitalize(eventDef.name)) {
                 const positions = [...rawEvent.topics.slice(1), rawEvent.data];
                 const resolvedFields: Record<string, any> = {
@@ -458,16 +446,8 @@ export function buildSchema(): GraphQLSchema {
           });
           const results: any[] = [];
           for (const event of events) {
-            const rawEvent = {
-              id: event.id,
-              contractId: event.contractId,
-              ledger: event.ledger,
-              timestamp: event.timestamp,
-              txHash: event.txHash,
-              topics: event.topics as string[],
-              data: event.data,
-            };
-            const translated = translateEvent(rawEvent);
+            const rawEvent = buildPersistedRawEvent(event);
+            const translated = await translateWithCache(rawEvent);
             if (translated.eventType === "Transfer" && rawEvent.topics.length >= 3) {
               results.push({
                 id: rawEvent.id,
@@ -503,16 +483,8 @@ export function buildSchema(): GraphQLSchema {
           });
           const results: any[] = [];
           for (const event of events) {
-            const rawEvent = {
-              id: event.id,
-              contractId: event.contractId,
-              ledger: event.ledger,
-              timestamp: event.timestamp,
-              txHash: event.txHash,
-              topics: event.topics as string[],
-              data: event.data,
-            };
-            const translated = translateEvent(rawEvent);
+            const rawEvent = buildPersistedRawEvent(event);
+            const translated = await translateWithCache(rawEvent);
             if (translated.eventType === "Mint" && rawEvent.topics.length >= 3) {
               results.push({
                 id: rawEvent.id,
@@ -548,16 +520,8 @@ export function buildSchema(): GraphQLSchema {
           });
           const results: any[] = [];
           for (const event of events) {
-            const rawEvent = {
-              id: event.id,
-              contractId: event.contractId,
-              ledger: event.ledger,
-              timestamp: event.timestamp,
-              txHash: event.txHash,
-              topics: event.topics as string[],
-              data: event.data,
-            };
-            const translated = translateEvent(rawEvent);
+            const rawEvent = buildPersistedRawEvent(event);
+            const translated = await translateWithCache(rawEvent);
             if (translated.eventType === "Burn" && rawEvent.topics.length >= 2) {
               results.push({
                 id: rawEvent.id,
@@ -611,6 +575,15 @@ export function buildSchema(): GraphQLSchema {
             isCustom: true,
             events: customAbi.events.map((e) => e.name),
           };
+        },
+      },
+      invalidateTranslationCache: {
+        type: new GraphQLNonNull(GraphQLInt),
+        args: {
+          pattern: { type: GraphQLString },
+        },
+        resolve: async (_, args) => {
+          return await purgeTranslationCache(args.pattern ?? undefined);
         },
       },
     },

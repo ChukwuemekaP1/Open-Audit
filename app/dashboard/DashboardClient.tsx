@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, BookOpen, ArrowRight, Radio, PauseCircle, PlayCircle, Upload, FileJson, Trash2 } from "lucide-react";
+import { SearchBar } from "@/components/dashboard/SearchBar";
 import {
   AlertCircle,
   BookOpen,
@@ -14,7 +16,7 @@ import {
   Download,
   Star,
 } from "lucide-react";
-import { SearchBar } from "@/components/dashboard/SearchBar";
+import { FilterBuilder } from "@/components/dashboard/FilterBuilder";
 import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { FavoritesSidebar } from "@/components/dashboard/FavoritesSidebar";
@@ -25,6 +27,7 @@ import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
 import { useLanguage } from "@/lib/hooks/useLanguage";
 import { useNetwork } from "@/lib/hooks/useNetwork";
 import { useDashboardPrefs } from "@/lib/hooks/useDashboardPrefs";
+import { useEventFilters } from "@/lib/hooks/useEventFilters";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import {
   buildCustomBlueprints,
@@ -32,6 +35,10 @@ import {
   removeCustomAbi,
   saveCustomAbi,
 } from "@/lib/translator/custom-abi";
+import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
+import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
+import type { TranslatedEvent } from "@/lib/translator/types";
+import type { RawEvent, CustomAbi } from "@/lib/translator/types";
 import { translateEvents } from "@/lib/translator/registry";
 import type { TranslatedEvent, RawEvent, CustomAbi } from "@/lib/translator/types";
 
@@ -41,10 +48,9 @@ function simulateNetworkDelay(ms: number): Promise<void> {
 
 export function DashboardClient(): React.JSX.Element {
   const [rawEvents, setRawEvents] = useState<RawEvent[]>(MOCK_RAW_EVENTS);
+  const [liveEvents, setLiveEvents] = useState<TranslatedEvent[]>([]);
   const [customAbis, setCustomAbis] = useState<CustomAbi[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
-  const [searchedContract, setSearchedContract] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -53,6 +59,7 @@ export function DashboardClient(): React.JSX.Element {
   const { language } = useLanguage();
   const { network } = useNetwork();
   const { prefs, ready, update, toggleColumn, toggleFavorite } = useDashboardPrefs();
+  const { filters, setFilters } = useEventFilters();
 
   useEffect(function () {
     setCustomAbis(loadCustomAbis());
@@ -63,6 +70,26 @@ export function DashboardClient(): React.JSX.Element {
     [customAbis]
   );
 
+  // Derive translations from the raw events + current custom blueprints so the
+  // feed re-translates instantly when an ABI is uploaded or removed.
+  const translatedRawEvents = useMemo(
+    function () {
+      return translateEvents(rawEvents, customBlueprints);
+    },
+    [rawEvents, customBlueprints]
+  );
+
+  // Merge live-streamed events (prepended) with the translated batch.
+  const events = useMemo(
+    function () {
+      return [...liveEvents, ...translatedRawEvents];
+    },
+    [liveEvents, translatedRawEvents]
+  );
+
+  const handleNewEvent = useCallback((event: TranslatedEvent) => {
+    setLiveEvents((prev) => [event, ...prev]);
+  }, []);
   const translatedEvents = useMemo(
     () => translateEvents(rawEvents, customBlueprints, language),
     [rawEvents, customBlueprints, language]
@@ -75,44 +102,49 @@ export function DashboardClient(): React.JSX.Element {
 
   const filteredEvents = useMemo(
     () =>
-      allEvents.filter((e) => {
-        if (searchedContract && e.raw.contractId !== searchedContract) return false;
+      allEvents.filter((event) => {
+        if (filters.contractId && event.raw.contractId !== filters.contractId) {
+          return false;
+        }
+
+        if (filters.eventType) {
+          const normalizedEventType = filters.eventType.toLowerCase();
+          const translatedType = event.eventType?.toLowerCase() ?? "";
+          if (!translatedType.includes(normalizedEventType)) {
+            return false;
+          }
+        }
+
+        if (filters.minAmount !== undefined) {
+          const amount = Number(event.raw.data ? BigInt("0x" + event.raw.data.slice(2).replace(/[^0-9a-fA-F]/g, "0")) : 0n);
+          if (Number(amount) < filters.minAmount) {
+            return false;
+          }
+        }
+
+        if (filters.startLedger !== undefined && event.raw.ledger < filters.startLedger) {
+          return false;
+        }
+
+        if (filters.endLedger !== undefined && event.raw.ledger > filters.endLedger) {
+          return false;
+        }
+
         return true;
       }),
-    [allEvents, searchedContract]
+    [allEvents, filters]
   );
 
   const handleNewEvent = useCallback(
     function (event: TranslatedEvent): void {
-      if (searchedContract && event.raw.contractId !== searchedContract) return;
+      if (filters.contractId && event.raw.contractId !== filters.contractId) return;
       setLiveEvents((prev) => [event, ...prev]);
     },
-    [searchedContract]
+    [filters.contractId]
   );
 
   const { isLive, isPaused, newEventIds, toggleLive, togglePause } =
     useLiveFeed(handleNewEvent);
-
-  const handleSearch = useCallback(async function (contractId: string): Promise<void> {
-    const trimmed = contractId.trim();
-    if (!trimmed) {
-      setRawEvents(MOCK_RAW_EVENTS);
-      setSearchedContract(null);
-      setError(null);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await simulateNetworkDelay(800);
-      setRawEvents(getMockEventsForContract(trimmed));
-      setSearchedContract(trimmed);
-      setError(null);
-    } catch {
-      setError("Failed to fetch events. Please check the Contract ID and try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
 
   const handleAbiUpload = useCallback(function (abi: CustomAbi): void {
     setCustomAbis(saveCustomAbi(abi));
@@ -125,14 +157,13 @@ export function DashboardClient(): React.JSX.Element {
 
   const handleFavoriteSelect = useCallback(
     function (contractId: string): void {
-      setSearchValue(contractId);
-      handleSearch(contractId);
+      setFilters({ contractId });
     },
-    [handleSearch]
+    [setFilters]
   );
 
-  const isFavorited = searchedContract
-    ? prefs.favorites.includes(searchedContract)
+  const isFavorited = filters.contractId
+    ? prefs.favorites.includes(filters.contractId)
     : false;
 
   return (
@@ -141,7 +172,7 @@ export function DashboardClient(): React.JSX.Element {
       {ready && (
         <FavoritesSidebar
           favorites={prefs.favorites}
-          activeContract={searchedContract}
+          activeContract={filters.contractId}
           onSelect={handleFavoriteSelect}
           onRemove={toggleFavorite}
         />
@@ -149,31 +180,40 @@ export function DashboardClient(): React.JSX.Element {
 
       {/* Search + favorite toggle */}
       <section aria-label="Event filters">
-        <div className="flex items-start gap-2">
-          <div className="flex-1">
-            <SearchBar
-              onSearch={handleSearch}
-              isLoading={isLoading}
-              defaultValue={searchValue}
-            />
-          </div>
-          {searchedContract && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mt-0.5 h-9 w-9 shrink-0"
-              onClick={() => toggleFavorite(searchedContract)}
-              aria-label={isFavorited ? "Unpin this contract" : "Pin this contract"}
-              title={isFavorited ? "Unpin contract" : "Pin contract"}
-            >
-              <Star
-                className={`h-4 w-4 transition-colors ${
-                  isFavorited
-                    ? "fill-amber-400 text-amber-400"
-                    : "text-muted-foreground"
-                }`}
-              />
-            </Button>
+        <div className="flex flex-col gap-3">
+          <FilterBuilder
+            eventTypeSuggestions={Array.from(
+              new Set(
+                allEvents
+                  .map((event) => event.eventType)
+                  .filter((value): value is string => Boolean(value))
+              )
+            )}
+            contractSuggestions={Array.from(
+              new Set(allEvents.map((event) => event.raw.contractId))
+            )}
+          />
+
+          {filters.contractId && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="mt-0.5 h-9 w-9 shrink-0"
+                onClick={() => toggleFavorite(filters.contractId)}
+                aria-label={isFavorited ? "Unpin this contract" : "Pin this contract"}
+                title={isFavorited ? "Unpin contract" : "Pin contract"}
+              >
+                <Star
+                  className={`h-4 w-4 transition-colors ${
+                    isFavorited
+                      ? "fill-amber-400 text-amber-400"
+                      : "text-muted-foreground"
+                  }`}
+                />
+              </Button>
+              <span className="text-sm text-muted-foreground">Filtered contract is pinned / unpinned by toggle.</span>
+            </div>
           )}
         </div>
       </section>

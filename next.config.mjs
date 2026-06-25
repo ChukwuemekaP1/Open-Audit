@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Enables Dockerfile.web standalone output tracing (main Dockerfile copies .next directly).
+  output: "standalone",
   async headers() {
     return [
       {

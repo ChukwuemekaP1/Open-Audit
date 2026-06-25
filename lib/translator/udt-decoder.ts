@@ -19,6 +19,13 @@
 import { xdr as StellarXdr, StrKey } from "stellar-sdk";
 import { getNetworkConfig } from "../stellar/client";
 import { truncateHex } from "./decode";
+import {
+  secureParseScVal,
+  secureScValToString,
+  secureParseSpecEntries,
+  toSafeErrorMessage,
+  logSecurityError,
+} from "./secure-xdr-parser";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,7 +105,25 @@ export async function decodeUdt(
 ): Promise<DecodedUdt | null> {
   try {
     const typeMap = await resolveTypeMap(contractId);
-    const scVal = parseScVal(scValHex);
+    
+    // Use secure parser instead of direct parsing
+    const parseResult = secureParseScVal(scValHex);
+    
+    if (!parseResult.success) {
+      // Security error - return safe fallback
+      console.warn(
+        `[open-audit:udt-decoder] Security error parsing ${contractId}/${udtName}:`,
+        parseResult.error.message
+      );
+      logSecurityError(parseResult.error, { contractId, udtName });
+      
+      return {
+        typeName: udtName,
+        fields: { error: toSafeErrorMessage(parseResult.error) },
+      };
+    }
+    
+    const scVal = parseResult.value;
     const decoded = decodeScValWithType(scVal, udtName, typeMap);
     return decoded ?? { typeName: udtName, fields: { raw: truncateHex(scValHex) } };
   } catch (err) {
@@ -131,12 +156,16 @@ export async function decodeEventPayload(
   }
 
   return scValHexes.map(function (hex: string): string {
-    try {
-      const scVal = parseScVal(hex);
-      return scValToString(scVal, typeMap);
-    } catch {
-      return truncateHex(hex);
+    // Use secure parser instead of direct parsing
+    const parseResult = secureParseScVal(hex);
+    
+    if (!parseResult.success) {
+      // Security error - return safe message
+      return toSafeErrorMessage(parseResult.error);
     }
+    
+    const stringResult = secureScValToString(parseResult.value, typeMap);
+    return stringResult.value;
   });
 }
 
@@ -246,29 +275,25 @@ function extractSpecFromWasm(wasm: Buffer): StellarXdr.ScSpecEntry[] {
   throw new Error("contractSpecV0 custom section not found in WASM binary");
 }
 
-/** Parses a raw payload buffer into an array of `ScSpecEntry`. */
 function parseSpecEntries(
   payload: Uint8Array,
   xdr: typeof StellarXdr
 ): StellarXdr.ScSpecEntry[] {
-  const entries: StellarXdr.ScSpecEntry[] = [];
-  let offset = 0;
-
-  while (offset < payload.length) {
-    // Each entry is length-prefixed (4-byte big-endian).
-    const len = new DataView(payload.buffer, payload.byteOffset + offset, 4).getUint32(0, false);
-    offset += 4;
-    const entryBytes = payload.subarray(offset, offset + len);
-    offset += len;
-
-    try {
-      entries.push(xdr.ScSpecEntry.fromXDR(Buffer.from(entryBytes)));
-    } catch {
-      // Skip malformed entries — parse as many as we can.
-    }
+  // Use secure parser instead of manual parsing
+  const parseResult = secureParseSpecEntries(payload);
+  
+  if (!parseResult.success) {
+    console.warn(
+      "[open-audit:udt-decoder] Security error parsing spec entries:",
+      parseResult.error.message
+    );
+    logSecurityError(parseResult.error, { payloadSize: payload.length });
+    
+    // Return empty array on security error
+    return [];
   }
-
-  return entries;
+  
+  return parseResult.value;
 }
 
 // ── Type Map Builder ──────────────────────────────────────────────────────────

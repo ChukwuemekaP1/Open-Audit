@@ -19,12 +19,18 @@
 
 import { createAllSacBlueprints } from "./blueprints/sac-transfer";
 import { createSacMintBurnBlueprint } from "./blueprints/sac-mint-burn";
-import { decodeEventName, decodeAddress, decodeAmount } from "./decode";
+import { decodeEventName } from "./core";
+import { sanitizeTextField } from "./core";
+import { decodeGenericEventPayload, formatGenericValue } from "./generic-fallback-decoder";
+import { RegistryTemplateException } from "../errors";
+import { captureExceptionSync } from "../telemetry";
+import { getCachedTranslation, setCachedTranslation, isRedisEnabled } from "../cache/redisCache";
 import type {
   EventMatchCriteria,
   RawEvent,
   TranslatedEvent,
   TranslationBlueprint,
+  VersionedTranslationBlueprint,
   Language,
   ContractSchema,
   ContractRegistryEntry,
@@ -41,55 +47,51 @@ const RESOLUTION_CACHE: Map<string, ContractSchema> = new Map();
  * Interpolates a template string with values from an object.
  * e.g. "Hello {name}" + { name: "World" } -> "Hello World"
  */
-function interpolate(template: string, values: Record<string, any>): string {
-  return template.replace(/\{([^}]+)\}/g, (match, key) => {
-    const [path, format] = key.split(".");
-    const val = values[path];
-    if (val && typeof val === "object" && format) {
-      return val[format] ?? match;
-    }
-    return val ?? match;
-  });
+type BlueprintRegistry = Map<string, TranslationBlueprint | VersionedTranslationBlueprint[]>;
+
+export type PersistedRawEvent = RawEvent & Partial<Pick<TranslatedEvent, "description" | "status" | "blueprintName" | "eventType" | "schemaVersion">>;
+
+function hasPersistedTranslation(event: PersistedRawEvent): boolean {
+  return (
+    event.status !== undefined ||
+    event.description !== undefined ||
+    event.blueprintName !== undefined ||
+    event.eventType !== undefined ||
+    event.schemaVersion !== undefined
+  );
 }
 
-/**
- * Creates a translation function from a declarative event mapping.
- */
-function createTranslateFromMapping(mapping: any): (event: RawEvent, lang: Language) => TranslationResult | null {
-  return (event: RawEvent) => {
-    // 1. Match topics
-    if (event.topics.length < mapping.topics.length) return null;
-    for (let i = 0; i < mapping.topics.length; i++) {
-      if (i === 0) {
-        if (decodeEventName(event.topics[0]) !== mapping.topics[0]) return null;
-      }
-      // Future: support matching other topics too
-    }
-
-    const fields: Record<string, any> = {};
-
-    // 2. Extract topics[1..]
-    mapping.event_structure.topics.forEach((t: any, i: number) => {
-      const hex = event.topics[i + 1];
-      if (!hex) return;
-      if (t.type === "address") fields[t.name] = decodeAddress(hex);
-      else if (t.type === "i128") fields[t.name] = decodeAmount(hex);
-      else fields[t.name] = hex;
-    });
-
-    // 3. Extract data
-    if (mapping.event_structure.data) {
-      const d = mapping.event_structure.data;
-      if (d.type === "i128") fields[d.name] = decodeAmount(event.data);
-      else if (d.type === "address") fields[d.name] = decodeAddress(event.data);
-      else fields[d.name] = event.data;
-    }
-
-    return {
-      description: interpolate(mapping.english_template, fields),
-      eventType: mapping.topics[0],
-    };
+function buildTranslationFromPersisted(event: PersistedRawEvent): TranslatedEvent {
+  return {
+    raw: event,
+    description: event.description ?? null,
+    status: event.status ?? "cryptic",
+    blueprintName: event.blueprintName ?? null,
+    eventType: event.eventType ?? null,
+    schemaVersion: event.schemaVersion ?? null,
   };
+}
+
+export async function translateWithCache(
+  event: PersistedRawEvent,
+  customBlueprints?: Map<string, TranslationBlueprint>,
+  lang: Language = "en"
+): Promise<TranslatedEvent> {
+  if (event.txHash && event.id && isRedisEnabled()) {
+    const cached = await getCachedTranslation(event);
+    if (cached) return cached;
+  }
+
+  const translated =
+    hasPersistedTranslation(event) && event.status !== undefined
+      ? buildTranslationFromPersisted(event)
+      : translateEvent(event, customBlueprints, lang);
+
+  if (event.txHash && event.id && isRedisEnabled()) {
+    await setCachedTranslation(event, translated);
+  }
+
+  return translated;
 }
 
 /**
@@ -138,11 +140,11 @@ function buildRegistry(): BlueprintRegistry {
   for (const contractId of mintBurnContracts) {
     const mintBurnBlueprint = createSacMintBurnBlueprint(contractId);
     const existing = registry.get(contractId);
-    if (existing && existing.schemas.length > 0) {
-      const latestSchema = existing.schemas[existing.schemas.length - 1];
-      const originalTranslate = latestSchema.blueprint.translate;
-      latestSchema.blueprint = {
-        ...latestSchema.blueprint,
+    if (existing) {
+      const existingBlueprint = Array.isArray(existing) ? existing[0] : existing;
+      const originalTranslate = existingBlueprint.translate.bind(existingBlueprint);
+      registry.set(contractId, {
+        ...mintBurnBlueprint,
         translate: (event, lang) => originalTranslate(event, lang) ?? mintBurnBlueprint.translate(event, lang),
       };
     } else {
@@ -254,18 +256,43 @@ export function translateEvent(
 ): TranslatedEvent {
   const schema = resolveSchema(event.contractId, event.ledger, customBlueprints);
 
-  if (!schema) {
+  if (!entry) {
+    console.warn(`No translation blueprint found for contract ${event.contractId}`);
+    
+    // Try to decode the event using the generic fallback decoder
+    const genericDecoded = decodeGenericEventPayload(event);
+    const description = genericDecoded
+      ? `[Unregistered Contract] ${formatGenericValue(genericDecoded)}`
+      : `[Unknown Event: No blueprint registered for contract ${event.contractId}. Hex Data: ${event.data}]`;
+    
     return {
       raw: event,
-      description: `[Unknown Event: No blueprint registered for contract ${event.contractId}. Hex Data: ${event.data}]`,
+      description: sanitizeTextField(description, { maxLength: 512 }),
       status: "cryptic",
-      blueprintName: null,
+      // Surface the custom contract name (if any) so the UI still has context.
+      blueprintName: custom?.contractName ? sanitizeTextField(custom.contractName, { maxLength: 100 }) : "Unregistered Contract",
       eventType: null,
       schemaVersion: null,
     };
   }
 
-  const translated = applyBlueprint(event, schema.blueprint, lang);
+  const blueprint = Array.isArray(entry)
+    ? resolveBlueprint(entry, event.ledger)
+    : entry;
+
+  if (!blueprint) {
+    console.warn(`No translation blueprint applicable for contract ${event.contractId} at ledger ${event.ledger}`);
+    return {
+      raw: event,
+      description: `[Unknown Event: No blueprint applicable for contract ${event.contractId} at ledger ${event.ledger}. Hex Data: ${event.data}]`,
+      status: "cryptic",
+      blueprintName: Array.isArray(entry) ? entry[0].contractName : entry.contractName,
+      eventType: null,
+      schemaVersion: null,
+    };
+  }
+
+  const translated = applyBlueprint(event, blueprint, lang);
   if (translated) return translated;
 
   return {
@@ -274,6 +301,7 @@ export function translateEvent(
     status: "cryptic",
     blueprintName: schema.blueprint.contractName,
     eventType: null,
+    schemaVersion: null,
   };
 }
 
@@ -339,6 +367,14 @@ export function matchesEventCriteria(
  * Translates a batch of raw events.
  * Preserves order and handles errors per-event gracefully.
  *
+ * Performance notes
+ * ─────────────────
+ * - Pre-allocates the result array to avoid dynamic resizing.
+ * - The try/catch is lifted outside the hot loop into a wrapper so V8 can
+ *   optimise the inner translateEvent() call independently. A try/catch inside
+ *   a tight loop prevents the enclosing function from being optimised by
+ *   TurboFan (the V8 JIT compiler).
+ *
  * @param customBlueprints Optional per-session blueprints (e.g. uploaded ABIs)
  *   that are consulted before the global registry.
  */
@@ -347,33 +383,49 @@ export function translateEvents(
   customBlueprints?: Map<string, TranslationBlueprint>,
   lang: Language = "en"
 ): TranslatedEvent[] {
-  return events.map(function (event: RawEvent): TranslatedEvent {
-    try {
-      return translateEvent(event, customBlueprints, lang);
-    } catch (error) {
-      const templateError = new RegistryTemplateException(
-        error instanceof Error ? error.message : "Translation failed",
-        {
-          contractId: event.contractId,
-          ledgerSequence: event.ledger,
-          xdrHex: event.data,
-          txHash: event.txHash,
-          operation: "translateEvent",
-        },
-        error
-      );
-      captureExceptionSync(templateError);
+  // Pre-allocate the result array — avoids incremental resizing on every push.
+  const results: TranslatedEvent[] = new Array(events.length);
+  for (let i = 0; i < events.length; i++) {
+    results[i] = translateEventSafe(events[i], customBlueprints, lang);
+  }
+  return results;
+}
 
-      return {
-        raw: event,
-        description: null,
-        status: "cryptic",
-        blueprintName: null,
-        eventType: null,
-        schemaVersion: null,
-      };
-    }
-  });
+/**
+ * Thin wrapper that isolates the try/catch from the hot loop in translateEvents.
+ * V8 TurboFan cannot optimise a function that contains a try/catch that wraps a
+ * loop, but it CAN optimise the callee — so we separate the concerns.
+ */
+function translateEventSafe(
+  event: RawEvent,
+  customBlueprints: Map<string, TranslationBlueprint> | undefined,
+  lang: Language
+): TranslatedEvent {
+  try {
+    return translateEvent(event, customBlueprints, lang);
+  } catch (error) {
+    const templateError = new RegistryTemplateException(
+      error instanceof Error ? error.message : "Translation failed",
+      {
+        contractId: event.contractId,
+        ledgerSequence: event.ledger,
+        xdrHex: event.data,
+        txHash: event.txHash,
+        operation: "translateEvent",
+      },
+      error
+    );
+    captureExceptionSync(templateError);
+
+    return {
+      raw: event,
+      description: null,
+      status: "cryptic",
+      blueprintName: null,
+      eventType: null,
+      schemaVersion: null,
+    };
+  }
 }
 
 /**
@@ -403,13 +455,22 @@ export function getBlueprintCount(): number {
  * Call this to add or upgrade a contract's translation schemas without
  * rebuilding the singleton. The blueprint list is re-sorted after insertion.
  */
-export function registerBlueprint(...blueprints: VersionedTranslationBlueprint[]): void {
+export function registerBlueprint(...blueprints: TranslationBlueprint[]): void {
   for (const blueprint of blueprints) {
-    const existing = REGISTRY.get(blueprint.contractId) ?? [];
-    existing.push(blueprint);
+    const existing = REGISTRY.get(blueprint.contractId);
+    if (!existing) {
+      REGISTRY.set(blueprint.contractId, blueprint);
+      continue;
+    }
+
+    const merged: VersionedTranslationBlueprint[] = Array.isArray(existing)
+      ? [...existing]
+      : [{ ...existing } as VersionedTranslationBlueprint];
+
+    merged.push(blueprint as VersionedTranslationBlueprint);
     REGISTRY.set(
       blueprint.contractId,
-      existing.sort((a, b) => (b.validFromLedger ?? 0) - (a.validFromLedger ?? 0))
+      merged.sort((a, b) => (b.validFromLedger ?? 0) - (a.validFromLedger ?? 0))
     );
   }
 }

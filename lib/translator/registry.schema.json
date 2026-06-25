@@ -2,69 +2,17 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/grant-fox/Open-Audit/lib/translator/registry.schema.json",
   "title": "Open-Audit Translation Registry",
-  "description": "Schema for the Open-Audit translation registry mapping. Supports multiple versions per contract with ledger ranges.",
+  "description": "Schema for the Open-Audit translation registry mapping. Validates an array of registry entries submitted via community PRs.",
   "type": "array",
   "minItems": 1,
   "items": {
-    "type": "object",
-    "required": ["contract_id", "contract_name", "schemas"],
-    "additionalProperties": false,
-    "properties": {
-      "contract_id": {
-        "type": "string",
-        "description": "The Soroban contract address",
-        "minLength": 1
-      },
-      "contract_name": {
-        "type": "string",
-        "description": "Human-readable name for the contract"
-      },
-      "schemas": {
-        "type": "array",
-        "minItems": 1,
-        "items": {
-          "$ref": "#/$defs/versionedSchema"
-        }
-      }
-    }
+    "$ref": "#/$defs/registryEntry"
   },
   "uniqueItems": true,
   "$defs": {
-    "versionedSchema": {
+    "registryEntry": {
       "type": "object",
-      "required": ["version", "valid_from_ledger", "event_mappings"],
-      "additionalProperties": false,
-      "properties": {
-        "version": {
-          "type": "string",
-          "description": "Semantic version of this schema"
-        },
-        "valid_from_ledger": {
-          "type": "integer",
-          "description": "The ledger sequence this schema becomes valid from",
-          "minimum": 0
-        },
-        "valid_to_ledger": {
-          "type": ["integer", "null"],
-          "description": "The ledger sequence this schema is valid until (inclusive). Null means current.",
-          "minimum": 0
-        },
-        "event_mappings": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/eventMapping"
-          }
-        },
-        "metadata": {
-          "type": "object",
-          "description": "Optional metadata about this version"
-        }
-      }
-    },
-    "eventMapping": {
-      "type": "object",
-      "required": ["topics", "event_structure", "english_template"],
+      "required": ["contract_id", "topics", "event_structure", "templates"],
       "additionalProperties": false,
       "properties": {
         "topics": {
@@ -86,9 +34,14 @@
                 "type": "object",
                 "required": ["name", "type"],
                 "properties": {
-                  "name": { "type": "string" },
+                  "name": {
+                    "type": "string",
+                    "description": "The field name used in the templates",
+                    "minLength": 1
+                  },
                   "type": {
                     "type": "string",
+                    "description": "The Soroban type (address, i128, u32, u64, i64, symbol, bool, bytes)",
                     "enum": ["address", "i128", "u32", "u64", "i64", "symbol", "bool", "bytes"]
                   }
                 }
@@ -98,18 +51,70 @@
               "type": "object",
               "required": ["name", "type"],
               "properties": {
-                "name": { "type": "string" },
+                "name": {
+                  "type": "string",
+                  "description": "The field name used in the templates",
+                  "minLength": 1
+                },
                 "type": {
                   "type": "string",
+                  "description": "The Soroban type (address, i128, u32, u64, i64, symbol, bool, bytes)",
                   "enum": ["address", "i128", "u32", "u64", "i64", "symbol", "bool", "bytes"]
                 }
               }
             }
           }
         },
-        "english_template": {
-          "type": "string",
-          "description": "Human-readable template describing the event, using {field} placeholders"
+        "templates": {
+          "type": "object",
+          "description": "Human-readable templates describing the event in different languages, using {field} placeholders",
+          "required": ["en"],
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          },
+          "properties": {
+            "en": {
+              "type": "string",
+              "description": "English template",
+              "minLength": 1
+            },
+            "es": {
+              "type": "string",
+              "description": "Spanish template",
+              "minLength": 1
+            },
+            "fr": {
+              "type": "string",
+              "description": "French template",
+              "minLength": 1
+            },
+            "zh": {
+              "type": "string",
+              "description": "Chinese template",
+              "minLength": 1
+            }
+          }
+        },
+        "test_vectors": {
+          "type": "array",
+          "description": "Sample payloads used by CI to render preview translations in PRs",
+          "items": {
+            "type": "object",
+            "required": ["params"],
+            "additionalProperties": false,
+            "properties": {
+              "hex_payload": {
+                "type": "string",
+                "description": "Optional raw hex event payload for display purposes"
+              },
+              "params": {
+                "type": "object",
+                "description": "Resolved template parameter values, e.g. { from: 'GABC...', amount: 50000000 }",
+                "additionalProperties": { "type": ["string", "number", "boolean"] }
+              }
+            }
+          }
         }
       }
     }
