@@ -47,11 +47,11 @@ export function SecurityMetricsDashboard() {
   const fetchMetrics = async () => {
     try {
       const response = await fetch("/api/security/metrics");
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       const data = await response.json();
       setMetrics(data);
       setError(null);
@@ -64,10 +64,11 @@ export function SecurityMetricsDashboard() {
 
   useEffect(() => {
     fetchMetrics();
-    
+
     // Refresh every 10 seconds
     const interval = setInterval(fetchMetrics, 10000);
-    
+
+    // Cleanup interval on unmount to prevent memory leaks
     return () => clearInterval(interval);
   }, []);
 

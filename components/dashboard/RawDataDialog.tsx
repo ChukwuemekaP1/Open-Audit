@@ -1,7 +1,7 @@
 "use client";
 
 import { Code, ExternalLink, Copy, Check } from "lucide-react";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,13 +31,32 @@ interface RawDataDialogProps {
 function CopyButton({ text }: { text: string }): React.JSX.Element {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function handleCopy(): Promise<void> {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     toast({ description: "Copied!" });
-    setTimeout(() => setCopied(false), 2000);
+    
+    // Clear any existing timeout to prevent memory leaks
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    timeoutRef.current = setTimeout(() => {
+      setCopied(false);
+      timeoutRef.current = null;
+    }, 2000);
   }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <TooltipProvider>
