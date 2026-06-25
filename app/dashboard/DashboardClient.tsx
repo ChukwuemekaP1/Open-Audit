@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { AlertCircle, BookOpen, ArrowRight, Radio, PauseCircle, PlayCircle } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, BookOpen, ArrowRight, Radio, PauseCircle, PlayCircle, Upload, FileJson, Trash2 } from "lucide-react";
 import { SearchBar } from "@/components/dashboard/SearchBar";
 import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
 import { StatsBar } from "@/components/dashboard/StatsBar";
@@ -16,8 +16,8 @@ import {
 } from "@/lib/translator/custom-abi";
 import { getMockEventsForContract, MOCK_RAW_EVENTS } from "@/lib/mock-data";
 import { useLiveFeed } from "@/lib/hooks/useLiveFeed";
-import { Button } from "@/components/ui/button";
 import type { TranslatedEvent } from "@/lib/translator/types";
+import type { RawEvent, CustomAbi } from "@/lib/translator/types";
 
 /** Simulates a network delay for realistic UX. */
 function simulateNetworkDelay(ms: number): Promise<void> {
@@ -28,6 +28,7 @@ function simulateNetworkDelay(ms: number): Promise<void> {
 
 export function DashboardClient(): React.JSX.Element {
   const [rawEvents, setRawEvents] = useState<RawEvent[]>(MOCK_RAW_EVENTS);
+  const [liveEvents, setLiveEvents] = useState<TranslatedEvent[]>([]);
   const [customAbis, setCustomAbis] = useState<CustomAbi[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchedContract, setSearchedContract] = useState<string | null>(null);
@@ -51,15 +52,23 @@ export function DashboardClient(): React.JSX.Element {
 
   // Derive translations from the raw events + current custom blueprints so the
   // feed re-translates instantly when an ABI is uploaded or removed.
-  const events = useMemo(
+  const translatedRawEvents = useMemo(
     function () {
       return translateEvents(rawEvents, customBlueprints);
     },
     [rawEvents, customBlueprints]
   );
 
+  // Merge live-streamed events (prepended) with the translated batch.
+  const events = useMemo(
+    function () {
+      return [...liveEvents, ...translatedRawEvents];
+    },
+    [liveEvents, translatedRawEvents]
+  );
+
   const handleNewEvent = useCallback((event: TranslatedEvent) => {
-    setEvents((prev) => [event, ...prev]);
+    setLiveEvents((prev) => [event, ...prev]);
   }, []);
 
   const { isLive, isPaused, newEventIds, toggleLive, togglePause } = useLiveFeed(handleNewEvent);

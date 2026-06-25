@@ -263,7 +263,9 @@ export function startEventIndexer(options: IndexerOptions): IndexerControls {
         if (response.latestLedger) {
           cursor = {
             lastLedger: response.latestLedger,
-            paginationCursor: response.cursor,
+            // stellar-sdk v12 does not expose a pagination cursor on GetEventsResponse;
+            // retain the previous cursor value until a newer SDK version adds it.
+            paginationCursor: (response as unknown as Record<string, unknown>).cursor as string | undefined ?? cursor.paginationCursor,
           };
           console.log(`[indexer] Cursor updated to ledger ${cursor.lastLedger}`);
         }
